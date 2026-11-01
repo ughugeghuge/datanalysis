@@ -401,29 +401,48 @@ with tab4:
     
     col1, col2, col3 = st.columns([1.5, 1.5, 1])
     target_boilers = col1.multiselect("Select Boiler(s)", list(cache.keys()), default=list(cache.keys()), key="o2_boilers")
-    preset_shift = col2.selectbox("Quick Time Preset", ["Custom", "Shift A (22:00 - 06:00)", "Shift B (06:00 - 14:00)", "Shift C (14:00 - 22:00)", "Full Day (00:00 - 23:59)"])
-    target_o2_date = col3.date_input("Target Date", value=min_date, min_value=min_date, max_value=max_date, key="o2_date")
+    preset_shift = col2.selectbox("Quick Time Preset", ["Custom Time (Single Day)", "Custom Date Range", "Shift A (22:00 - 06:00)", "Shift B (06:00 - 14:00)", "Shift C (14:00 - 22:00)", "Full Day (00:00 - 23:59)"])
     
-    if preset_shift == "Shift A (22:00 - 06:00)":
-        start_t = datetime.combine(target_o2_date - timedelta(days=1), time(22, 0))
-        end_t = datetime.combine(target_o2_date, time(6, 0))
-    elif preset_shift == "Shift B (06:00 - 14:00)":
-        start_t = datetime.combine(target_o2_date, time(6, 0))
-        end_t = datetime.combine(target_o2_date, time(14, 0))
-    elif preset_shift == "Shift C (14:00 - 22:00)":
-        start_t = datetime.combine(target_o2_date, time(14, 0))
-        end_t = datetime.combine(target_o2_date, time(22, 0))
-    elif preset_shift == "Full Day (00:00 - 23:59)":
-        start_t = datetime.combine(target_o2_date, time(0, 0))
-        end_t = datetime.combine(target_o2_date, time(23, 59))
+    if preset_shift == "Custom Date Range":
+        date_sel = col3.date_input("Target Date Range", value=(min_date, max_date), min_value=min_date, max_value=max_date, key="o2_dr")
+        if isinstance(date_sel, tuple):
+            if len(date_sel) == 2:
+                start_d, end_d = date_sel
+            elif len(date_sel) == 1:
+                start_d, end_d = date_sel[0], date_sel[0]
+            else:
+                start_d, end_d = min_date, max_date
+        else:
+            start_d, end_d = date_sel, date_sel
+        start_t = datetime.combine(start_d, time(0, 0))
+        end_t = datetime.combine(end_d, time(23, 59))
     else:
-        custom_tr = st.slider("Custom Time Window", value=(time(0, 0), time(23, 59)), format="HH:mm", key="o2_time")
-        start_t = datetime.combine(target_o2_date, custom_tr[0])
-        end_t = datetime.combine(target_o2_date, custom_tr[1])
+        target_o2_date = col3.date_input("Target Date", value=min_date, min_value=min_date, max_value=max_date, key="o2_date")
+        
+        if preset_shift == "Shift A (22:00 - 06:00)":
+            start_t = datetime.combine(target_o2_date - timedelta(days=1), time(22, 0))
+            end_t = datetime.combine(target_o2_date, time(6, 0))
+        elif preset_shift == "Shift B (06:00 - 14:00)":
+            start_t = datetime.combine(target_o2_date, time(6, 0))
+            end_t = datetime.combine(target_o2_date, time(14, 0))
+        elif preset_shift == "Shift C (14:00 - 22:00)":
+            start_t = datetime.combine(target_o2_date, time(14, 0))
+            end_t = datetime.combine(target_o2_date, time(22, 0))
+        elif preset_shift == "Full Day (00:00 - 23:59)":
+            start_t = datetime.combine(target_o2_date, time(0, 0))
+            end_t = datetime.combine(target_o2_date, time(23, 59))
+        else:
+            custom_tr = st.slider("Custom Time Window", value=(time(0, 0), time(23, 59)), format="HH:mm", key="o2_time")
+            start_t = datetime.combine(target_o2_date, custom_tr[0])
+            end_t = datetime.combine(target_o2_date, custom_tr[1])
 
-    col4, col5 = st.columns(2)
+    st.markdown("---")
+    col4, col5, col6 = st.columns([2, 2, 1])
     flow_col_sel = col4.selectbox("X-Axis (Flow Metric)", options=all_params, index=default_flow_idx, key="o2_x")
     o2_col_sel = col5.selectbox("Y-Axis (Oxygen/Secondary Metric)", options=all_params, index=default_o2_idx, key="o2_y")
+    
+    # Exclude shutdowns (flow < 1.0) so atmospheric O2 readings don't corrupt the statistics
+    op_threshold = col6.number_input("Active Boiler Threshold (Flow >)", value=1.0, step=0.5, help="Filters out shutdown periods from the stats table and scatterplot.")
     
     if target_boilers:
         fig_scat = go.Figure()
@@ -443,8 +462,8 @@ with tab4:
                     w_df_o2 = w_df_o2.dropna(subset=['Flow_Num', 'O2_Num'])
                     
                     if not w_df_o2.empty:
-                        # Drop periods where the boiler is off (Flow <= 0.05) to prevent skewed Min/Max/Avg calculations
-                        stats_df_o2 = w_df_o2[w_df_o2['Flow_Num'] > 0.05]
+                        # Drop periods where the boiler is off to prevent skewed Min/Max/Avg O2 calculations
+                        stats_df_o2 = w_df_o2[w_df_o2['Flow_Num'] >= op_threshold]
                         
                         if not stats_df_o2.empty:
                             stats_data.append({
@@ -463,7 +482,7 @@ with tab4:
                                 f"Min {o2_col_sel}": 0.0, f"Avg {o2_col_sel}": 0.0, f"Max {o2_col_sel}": 0.0,
                             })
                         
-                        # Store individual line graphs for vertical stacking
+                        # Timeline retains ALL data so you can see shutdowns visually
                         fig_line = make_subplots(specs=[[{"secondary_y": True}]])
                         fig_line.add_trace(go.Scatter(
                             x=w_df_o2['timestamp'], y=w_df_o2['Flow_Num'],
@@ -483,12 +502,12 @@ with tab4:
                         fig_line.update_yaxes(title_text=o2_col_sel, secondary_y=True)
                         line_charts.append(fig_line)
                         
-                        # Add to the combined Scatterplot
+                        # Scatterplot uses filtered stats data so 21% O2 dots don't ruin the correlation view
                         fig_scat.add_trace(go.Scatter(
-                            x=w_df_o2['Flow_Num'], y=w_df_o2['O2_Num'], mode='markers',
+                            x=stats_df_o2['Flow_Num'], y=stats_df_o2['O2_Num'], mode='markers',
                             name=b_name,
                             marker=dict(color=B_COLORS.get(b_name), size=6, opacity=0.7),
-                            text=w_df_o2['timestamp'].dt.strftime('%H:%M:%S'), hoverinfo="text+x+y+name"
+                            text=stats_df_o2['timestamp'].dt.strftime('%H:%M:%S'), hoverinfo="text+x+y+name"
                         ))
         
         if stats_data:
