@@ -1,7 +1,7 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
-import re 
+import re
 from datetime import timedelta, datetime, time
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
@@ -202,23 +202,27 @@ if cache_data_result[0] is None:
     
 cache, all_params, (min_date, max_date) = cache_data_result
 
-st.sidebar.markdown("### Global Parameters")
+st.sidebar.markdown("### Global Parameters")[cite: 13]
 
-# Robust default selection logic
+# Robust default selection logic[cite: 13]
 default_flow_idx = 0
 default_press_idx = 1
+default_o2_idx = 0
+
 for i, p in enumerate(all_params):
     p_lower = p.lower()
     if 'steam flow' in p_lower or 'flow meter' in p_lower:
         default_flow_idx = i
     if 'boiler pressure' in p_lower or 'steam pressure' in p_lower:
         default_press_idx = i
+    if 'oxygen' in p_lower or 'o2' in p_lower:
+        default_o2_idx = i
 
 sel_param = st.sidebar.selectbox("Primary Parameter (Y1 / Flow Metric)", options=all_params, index=default_flow_idx)
 sel_param2 = st.sidebar.selectbox("Secondary Parameter (Y2)", options=all_params, index=default_press_idx)
 sel_view = st.sidebar.radio("View Mode", options=["Aligned Multi-Boiler", "Single Boiler Only"])
 
-tab1, tab2, tab3 = st.tabs(["Zero-Flow Event Analytics", "Shift & Daily Totalizer", "Custom Day Explorer"])
+tab1, tab2, tab3, tab4 = st.tabs(["Zero-Flow Event Analytics", "Shift & Daily Totalizer", "Custom Day Explorer", "Oxygen vs Flow Analysis"])
 
 # ==============================================================================
 # TAB 1: ZERO-FLOW EVENT ANALYTICS
@@ -264,11 +268,11 @@ with tab1:
             for b_name in boilers_to_plot:
                 if b_name not in cache: continue
                 b_df = cache[b_name]
-                m_param = find_matching_param(b_df.columns, sel_param)
-                if not m_param: continue
+                m_param_found = find_matching_param(b_df.columns, sel_param)
+                if not m_param_found: continue
                 w_df = b_df[(b_df['timestamp'] >= ev['window_start']) & (b_df['timestamp'] <= ev['window_end'])]
                 fig1.add_trace(go.Scatter(
-                    x=w_df['timestamp'], y=pd.to_numeric(w_df[m_param], errors='coerce'),
+                    x=w_df['timestamp'], y=pd.to_numeric(w_df[m_param_found], errors='coerce'),
                     mode='lines+markers', name=f"{b_name}", line=dict(color=B_COLORS.get(b_name), width=2), marker=dict(size=4)
                 ))
             fig1.add_vrect(x0=ev['start_time'], x1=ev['end_time'], fillcolor="rgba(220, 38, 38, 0.15)", line_width=1, line_color="#dc2626")
@@ -305,10 +309,10 @@ with tab1:
             for b_name in boilers_to_plot:
                 if b_name not in cache: continue
                 b_df = cache[b_name]
-                m_param = find_matching_param(b_df.columns, sel_param)
-                if m_param:
+                m_param_found = find_matching_param(b_df.columns, sel_param)
+                if m_param_found:
                     w_df = b_df[(b_df['timestamp'] >= ev['window_start']) & (b_df['timestamp'] <= ev['window_end'])].copy()
-                    w_df = w_df.set_index('timestamp')[m_param]
+                    w_df = w_df.set_index('timestamp')[m_param_found]
                     w_df = pd.to_numeric(w_df, errors='coerce').resample('1min').mean().interpolate(method='time')
                     sum_df[b_name] = w_df
 
@@ -364,27 +368,110 @@ with tab3:
     
     colX, colY = st.columns(2)
     explore_date = colX.date_input("Select Date to Explore", value=min_date, min_value=min_date, max_value=max_date, key="exp_date")
-    time_range = colY.slider("Select Time Range", value=(time(0, 0), time(23, 59)), format="HH:mm")
+    time_range = colY.slider("Select Time Range", value=(time(0, 0), time(23, 59)), format="HH:mm", key="exp_time")
     
     if explore_date:
         start_dt = datetime.combine(explore_date, time_range[0])
         end_dt = datetime.combine(explore_date, time_range[1])
         
-        boilers_to_plot_exp = [sel_boiler] if sel_view == "Single Boiler Only" else list(cache.keys())
+        boilers_to_plot_exp = list(cache.keys()) if sel_view == "Aligned Multi-Boiler" else [st.selectbox("Select Boiler", list(cache.keys()), key="exp_boiler")]
         
         fig_exp = go.Figure()
         for b_name in boilers_to_plot_exp:
             if b_name not in cache: continue
             b_df = cache[b_name]
-            m_param = find_matching_param(b_df.columns, sel_param)
-            if not m_param: continue
+            m_param_found = find_matching_param(b_df.columns, sel_param)
+            if not m_param_found: continue
             
             w_df = b_df[(b_df['timestamp'] >= start_dt) & (b_df['timestamp'] <= end_dt)]
             if not w_df.empty:
                 fig_exp.add_trace(go.Scatter(
-                    x=w_df['timestamp'], y=pd.to_numeric(w_df[m_param], errors='coerce'),
-                    mode='lines', name=f"{b_name} ({m_param})", line=dict(color=B_COLORS.get(b_name), width=1.5)
+                    x=w_df['timestamp'], y=pd.to_numeric(w_df[m_param_found], errors='coerce'),
+                    mode='lines', name=f"{b_name} ({m_param_found})", line=dict(color=B_COLORS.get(b_name), width=1.5)
                 ))
                 
         fig_exp.update_layout(title=f"Custom Timeline: {sel_param}", template="plotly_white", hovermode="x unified", height=550)
         st.plotly_chart(fig_exp, use_container_width=True)
+
+# ==============================================================================
+# TAB 4: OXYGEN VS FLOW ANALYSIS (NEW)
+# ==============================================================================
+with tab4:
+    st.markdown("### Oxygen vs. Steam Flow Correlation")
+    
+    col1, col2, col3 = st.columns([1, 2, 2])
+    target_b = col1.selectbox("Select Boiler", list(cache.keys()), key="o2_boiler")
+    
+    # Preset shifts dropdown for easy selection
+    preset_shift = col2.selectbox("Quick Time Preset", ["Custom", "Shift A (22:00 - 06:00)", "Shift B (06:00 - 14:00)", "Shift C (14:00 - 22:00)", "Full Day (00:00 - 23:59)"])
+    target_o2_date = col3.date_input("Target Date", value=min_date, min_value=min_date, max_value=max_date, key="o2_date")
+    
+    # Determine start and end times based on preset
+    if preset_shift == "Shift A (22:00 - 06:00)":
+        start_t = datetime.combine(target_o2_date - timedelta(days=1), time(22, 0))
+        end_t = datetime.combine(target_o2_date, time(6, 0))
+    elif preset_shift == "Shift B (06:00 - 14:00)":
+        start_t = datetime.combine(target_o2_date, time(6, 0))
+        end_t = datetime.combine(target_o2_date, time(14, 0))
+    elif preset_shift == "Shift C (14:00 - 22:00)":
+        start_t = datetime.combine(target_o2_date, time(14, 0))
+        end_t = datetime.combine(target_o2_date, time(22, 0))
+    elif preset_shift == "Full Day (00:00 - 23:59)":
+        start_t = datetime.combine(target_o2_date, time(0, 0))
+        end_t = datetime.combine(target_o2_date, time(23, 59))
+    else:
+        # Custom time selection if "Custom" is active
+        custom_tr = st.slider("Custom Time Window", value=(time(0, 0), time(23, 59)), format="HH:mm", key="o2_time")
+        start_t = datetime.combine(target_o2_date, custom_tr[0])
+        end_t = datetime.combine(target_o2_date, custom_tr[1])
+
+    # Allow users to override the detected columns
+    col4, col5 = st.columns(2)
+    flow_col_sel = col4.selectbox("X-Axis (Flow Metric)", options=all_params, index=default_flow_idx, key="o2_x")
+    o2_col_sel = col5.selectbox("Y-Axis (Oxygen Metric)", options=all_params, index=default_o2_idx, key="o2_y")
+    
+    if target_b in cache:
+        b_df_o2 = cache[target_b]
+        col_f = find_matching_param(b_df_o2.columns, flow_col_sel)
+        col_o = find_matching_param(b_df_o2.columns, o2_col_sel)
+        
+        if col_f and col_o:
+            w_df_o2 = b_df_o2[(b_df_o2['timestamp'] >= start_t) & (b_df_o2['timestamp'] <= end_t)].copy()
+            w_df_o2['Flow_Num'] = pd.to_numeric(w_df_o2[col_f], errors='coerce')
+            w_df_o2['O2_Num'] = pd.to_numeric(w_df_o2[col_o], errors='coerce')
+            w_df_o2 = w_df_o2.dropna(subset=['Flow_Num', 'O2_Num'])
+            
+            if not w_df_o2.empty:
+                # 1. Dual-Axis Time Series
+                st.markdown(f"#### Timeline: {col_f} vs {col_o}")
+                fig_o2_time = make_subplots(specs=[[{"secondary_y": True}]])
+                fig_o2_time.add_trace(go.Scatter(
+                    x=w_df_o2['timestamp'], y=w_df_o2['Flow_Num'],
+                    name=col_f, line=dict(color=B_COLORS.get(target_b), width=2)
+                ), secondary_y=False)
+                fig_o2_time.add_trace(go.Scatter(
+                    x=w_df_o2['timestamp'], y=w_df_o2['O2_Num'],
+                    name=col_o, line=dict(color=SEC_COLOR, width=2, dash='dot')
+                ), secondary_y=True)
+                
+                fig_o2_time.update_layout(template="plotly_white", hovermode="x unified", height=400, margin=dict(t=10, b=10))
+                fig_o2_time.update_yaxes(title_text=col_f, secondary_y=False, color=B_COLORS.get(target_b))
+                fig_o2_time.update_yaxes(title_text=col_o, secondary_y=True, color=SEC_COLOR)
+                st.plotly_chart(fig_o2_time, use_container_width=True)
+                
+                # 2. Scatter Correlation
+                st.markdown(f"#### Scatter Correlation")
+                fig_scat = go.Figure(data=go.Scatter(
+                    x=w_df_o2['Flow_Num'], y=w_df_o2['O2_Num'], mode='markers',
+                    marker=dict(color=B_COLORS.get(target_b), size=6, opacity=0.7),
+                    text=w_df_o2['timestamp'].dt.strftime('%H:%M:%S'), hoverinfo="text+x+y"
+                ))
+                fig_scat.update_layout(
+                    xaxis_title=col_f, yaxis_title=col_o, 
+                    template="plotly_white", height=400, margin=dict(t=10, b=10)
+                )
+                st.plotly_chart(fig_scat, use_container_width=True)
+            else:
+                st.warning("No valid overlapping data points for Flow and Oxygen in the selected time window.")
+        else:
+            st.error("Could not locate the selected columns in the dataset for this boiler.")
