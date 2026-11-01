@@ -12,51 +12,102 @@ warnings.filterwarnings('ignore')
 st.set_page_config(page_title="Boiler Analytics Platform", layout="wide", initial_sidebar_state="expanded")
 
 # ==============================================================================
-# UI/UX: MODERN MORPHING SIDEBAR CSS (PILL TOGGLES FIXED)
+# UI/UX: PREMIUM APPLE-STYLE SIDEBAR NAVIGATION CSS
 # ==============================================================================
 st.markdown("""
 <style>
-/* Target the radio group specifically in the sidebar */
-[data-testid="stSidebar"] [role="radiogroup"] {
-    gap: 0.8rem;
+/* Sidebar Background Polish */
+[data-testid="stSidebar"] {
+    background-color: #fbfbfd;
 }
+
+/* Radio Group Container - Flush & Gapless */
+[data-testid="stSidebar"] [role="radiogroup"] {
+    gap: 0px !important;
+    background-color: #f5f5f7;
+    border-radius: 10px;
+    padding: 4px;
+    border: 1px solid #d2d2d7;
+    width: 100%;
+}
+
+/* Base Tab Styling - Rectangular, Identical Width */
 [data-testid="stSidebar"] [role="radiogroup"] label {
-    padding: 10px 15px;
-    border-radius: 25px; /* Fully rounded pill shape */
-    background-color: #f1f5f9;
-    border: 1px solid #e2e8f0;
-    transition: all 0.3s ease;
+    padding: 12px 16px;
+    border-radius: 6px; /* Rectangular with strict, minimal softening */
+    margin: 0px !important;
+    background-color: transparent;
+    border: 1px solid transparent;
+    transition: background-color 0.2s ease;
     cursor: pointer;
     display: flex;
     align-items: center;
-    margin-bottom: 4px;
+    width: 100%;
 }
+
+/* Hover State for Inactive Tabs */
 [data-testid="stSidebar"] [role="radiogroup"] label:hover {
-    background-color: #e2e8f0;
-    transform: translateY(-2px);
+    background-color: rgba(0, 0, 0, 0.04);
 }
-/* Active State Styling */
+
+/* Active State Styling - Apple Blue (#0071e3) */
 [data-testid="stSidebar"] [role="radiogroup"] label[data-checked="true"],
 [data-testid="stSidebar"] [role="radiogroup"] label:has(input:checked) {
-    background-color: #1f77b4 !important;
-    border-color: #1f77b4 !important;
-    transform: scale(1.02);
-    box-shadow: 0 4px 10px rgba(31, 119, 180, 0.3);
+    background-color: #0071e3 !important;
+    border: 1px solid #0071e3 !important;
+    box-shadow: 0 2px 8px rgba(0, 113, 227, 0.25);
+    position: relative;
+    overflow: hidden;
 }
-/* Text Styling */
+
+/* Subtle White Light-Sweep Animation on Active Tab */
+[data-testid="stSidebar"] [role="radiogroup"] label[data-checked="true"]::before,
+[data-testid="stSidebar"] [role="radiogroup"] label:has(input:checked)::before {
+    content: '';
+    position: absolute;
+    top: 0; left: -100%;
+    width: 50%; height: 100%;
+    background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.35), transparent);
+    animation: light-sweep 3s infinite cubic-bezier(0.4, 0, 0.2, 1);
+    z-index: 1;
+    pointer-events: none;
+}
+
+@keyframes light-sweep {
+    0% { left: -100%; }
+    50% { left: 200%; }
+    100% { left: 200%; }
+}
+
+/* Text Formatting */
 [data-testid="stSidebar"] [role="radiogroup"] label p {
     margin: 0 !important;
-    font-size: 15px;
-    color: #334155;
+    font-size: 14.5px;
+    color: #1d1d1f; 
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    text-align: left;
+    width: 100%;
+    position: relative;
+    z-index: 2; /* Keeps text layered above the animation */
 }
+
+/* Active Text Color */
 [data-testid="stSidebar"] [role="radiogroup"] label[data-checked="true"] p,
 [data-testid="stSidebar"] [role="radiogroup"] label:has(input:checked) p {
-    color: white !important;
+    color: #ffffff !important;
     font-weight: 600;
+    letter-spacing: 0.2px;
 }
-/* Hide only the radio circle widget, keeping the text container visible */
+
+/* Completely hide the old circular radio widget */
 [data-testid="stSidebar"] [role="radiogroup"] label > div:first-child {
     display: none !important;
+}
+
+/* Ensure container stretches to limits */
+[data-testid="stSidebar"] [role="radiogroup"] label div[data-testid="stMarkdownContainer"] {
+    display: flex !important;
+    width: 100%;
 }
 </style>
 """, unsafe_allow_html=True)
@@ -270,20 +321,20 @@ if all_params:
         if 'oxygen' in p_lower or 'o2' in p_lower: default_o2_idx = i
 
 # ==============================================================================
-# VERTICAL SIDEBAR NAVIGATION
+# SEAMLESS VERTICAL SIDEBAR NAVIGATION
 # ==============================================================================
-st.sidebar.title("🏭 Navigation")
-app_mode = st.sidebar.radio("Select View:", [
+# Using label_visibility="collapsed" removes the title text above the tabs for a cleaner look
+app_mode = st.sidebar.radio("Navigation", [
     "Boiler operation and Flow",
     "Loading pattern",
     "Steam flow vs oxygen variation",
     "System Cross-Analysis",
     "Parameter Correlation Matrix",
     "Data Management"
-])
+], label_visibility="collapsed")
 
 # ==============================================================================
-# DATA MANAGEMENT TAB (NOW IN MAIN VIEW)
+# DATA MANAGEMENT TAB
 # ==============================================================================
 if app_mode == "Data Management":
     st.title("Data Management")
