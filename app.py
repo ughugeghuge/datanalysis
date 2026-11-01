@@ -12,6 +12,44 @@ warnings.filterwarnings('ignore')
 st.set_page_config(page_title="Boiler Analytics Platform", layout="wide", initial_sidebar_state="expanded")
 
 # ==============================================================================
+# UI/UX: MODERN MORPHING SIDEBAR CSS
+# ==============================================================================
+st.markdown("""
+<style>
+/* Modern Morph-Like Radio Buttons for Sidebar */
+div[data-testid="stSidebar"] div[data-testid="stRadio"] > div {
+    gap: 0.6rem;
+}
+div[data-testid="stSidebar"] div[data-testid="stRadio"] > div > label {
+    padding: 12px 16px;
+    border-radius: 10px;
+    background-color: #f1f5f9;
+    border: 1px solid #e2e8f0;
+    transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
+    cursor: pointer;
+}
+div[data-testid="stSidebar"] div[data-testid="stRadio"] > div > label:hover {
+    background-color: #e2e8f0;
+    transform: translateX(4px);
+}
+div[data-testid="stSidebar"] div[data-testid="stRadio"] > div > label:has(input:checked) {
+    background-color: #1f77b4;
+    border-color: #1f77b4;
+    transform: scale(1.02) translateX(4px);
+    box-shadow: 0 4px 12px rgba(31, 119, 180, 0.3);
+}
+div[data-testid="stSidebar"] div[data-testid="stRadio"] > div > label:has(input:checked) div[data-testid="stMarkdownContainer"] p {
+    color: white !important;
+    font-weight: 600;
+}
+/* Hide default radio circle */
+div[data-testid="stSidebar"] div[data-testid="stRadio"] > div > label div[data-baseweb="radio"] div:first-child {
+    display: none;
+}
+</style>
+""", unsafe_allow_html=True)
+
+# ==============================================================================
 # PROFESSIONAL LIGHT THEME COLORS
 # ==============================================================================
 B_COLORS = {
@@ -217,19 +255,19 @@ for i, p in enumerate(all_params):
 # ==============================================================================
 # VERTICAL SIDEBAR NAVIGATION
 # ==============================================================================
-st.sidebar.title("Navigation")
+st.sidebar.title("🏭 Navigation")
 app_mode = st.sidebar.radio("Select View:", [
-    "Zero-Flow Event Analytics",
-    "Shift Totalizer & Custom Timeline",
-    "Oxygen vs Flow Analysis",
+    "Boiler operation and Flow",
+    "Loading pattern",
+    "Steam flow vs oxygen variation",
     "Parameter Correlation Matrix"
 ])
 
 # ==============================================================================
-# 1. ZERO-FLOW EVENT ANALYTICS
+# 1. BOILER OPERATION AND FLOW
 # ==============================================================================
-if app_mode == "Zero-Flow Event Analytics":
-    st.title("Zero-Flow Event Analytics")
+if app_mode == "Boiler operation and Flow":
+    st.title("Boiler Operation and Flow")
     
     with st.expander("Event Parameters", expanded=True):
         colA, colB = st.columns(2)
@@ -330,15 +368,16 @@ if app_mode == "Zero-Flow Event Analytics":
                 st.plotly_chart(fig_sum, use_container_width=True)
 
 # ==============================================================================
-# 2. SHIFT TOTALIZER & CUSTOM TIMELINE
+# 2. LOADING PATTERN
 # ==============================================================================
-elif app_mode == "Shift Totalizer & Custom Timeline":
-    st.title("Shift Totalizer & Custom Timeline")
+elif app_mode == "Loading pattern":
+    st.title("Loading Pattern")
     
     with st.expander("Analysis Configuration", expanded=True):
-        c1, c2 = st.columns(2)
+        c1, c2, c3 = st.columns([1.5, 1, 1])
         target_boilers = c1.multiselect("Select Boiler(s)", list(cache.keys()), default=list(cache.keys()), key="s_boilers")
-        sel_param = c2.selectbox("Flow Metric for Calculation", options=all_params, index=default_flow_idx, key="s_param")
+        sel_param = c2.selectbox("Primary Metric (Flow)", options=all_params, index=default_flow_idx, key="s_param")
+        sel_param2 = c3.selectbox("Secondary Metric (Pressure)", options=all_params, index=default_press_idx, key="s_param2")
 
     st.markdown("### Daily & Shift Consumption Totalizer")
     target_date = st.date_input("Select Production Date", value=min_date, min_value=min_date, max_value=max_date)
@@ -375,6 +414,7 @@ elif app_mode == "Shift Totalizer & Custom Timeline":
         start_dt = datetime.combine(explore_date, time_range[0])
         end_dt = datetime.combine(explore_date, time_range[1])
         
+        # Plot 1: Combined Primary Metric Line Chart
         fig_exp = go.Figure()
         for b_name in target_boilers:
             if b_name not in cache: continue
@@ -388,14 +428,42 @@ elif app_mode == "Shift Totalizer & Custom Timeline":
                     x=w_df['timestamp'], y=pd.to_numeric(w_df[m_param_found], errors='coerce'),
                     mode='lines', name=f"{b_name} ({m_param_found})", line=dict(color=B_COLORS.get(b_name), width=1.5)
                 ))
-        fig_exp.update_layout(template="plotly_white", hovermode="x unified", height=450, margin=dict(t=10, b=10))
+        fig_exp.update_layout(title=f"Combined Timeline: {sel_param}", template="plotly_white", hovermode="x unified", height=450, margin=dict(t=40, b=10))
         st.plotly_chart(fig_exp, use_container_width=True)
 
+        st.markdown("---")
+        st.markdown("### Steam Flow vs Boiler Pressure Analysis")
+        # Plot 2: Individual Dual Axis Overlays
+        for b_name in target_boilers:
+            if b_name not in cache: continue
+            b_df = cache[b_name]
+            m_param1 = find_matching_param(b_df.columns, sel_param)
+            m_param2 = find_matching_param(b_df.columns, sel_param2)
+            
+            w_df = b_df[(b_df['timestamp'] >= start_dt) & (b_df['timestamp'] <= end_dt)]
+            if not w_df.empty:
+                fig_dual = make_subplots(specs=[[{"secondary_y": True}]])
+                if m_param1:
+                    fig_dual.add_trace(go.Scatter(
+                        x=w_df['timestamp'], y=pd.to_numeric(w_df[m_param1], errors='coerce'),
+                        name=f"{m_param1}", line=dict(color=B_COLORS.get(b_name), width=2)
+                    ), secondary_y=False)
+                if m_param2:
+                    fig_dual.add_trace(go.Scatter(
+                        x=w_df['timestamp'], y=pd.to_numeric(w_df[m_param2], errors='coerce'),
+                        name=f"{m_param2}", line=dict(color=SEC_COLOR, width=2, dash='dot')
+                    ), secondary_y=True)
+                
+                fig_dual.update_layout(title=f"{b_name}: {m_param1} (Solid) vs {m_param2} (Dotted)", template="plotly_white", hovermode="x unified", height=350, margin=dict(t=40, b=10))
+                fig_dual.update_yaxes(title_text=m_param1, secondary_y=False, color=B_COLORS.get(b_name))
+                fig_dual.update_yaxes(title_text=m_param2, secondary_y=True, color=SEC_COLOR)
+                st.plotly_chart(fig_dual, use_container_width=True)
+
 # ==============================================================================
-# 3. OXYGEN VS FLOW ANALYSIS
+# 3. STEAM FLOW VS OXYGEN VARIATION
 # ==============================================================================
-elif app_mode == "Oxygen vs Flow Analysis":
-    st.title("Oxygen vs Flow Analysis")
+elif app_mode == "Steam flow vs oxygen variation":
+    st.title("Steam flow vs oxygen variation")
     
     with st.expander("Analysis Configuration", expanded=True):
         col1, col2 = st.columns([1, 1.5])
@@ -520,7 +588,7 @@ elif app_mode == "Oxygen vs Flow Analysis":
             st.markdown("#### Period Statistics Summary (Active Operating Flow Only)")
             st.dataframe(pd.DataFrame(stats_data).set_index("Boiler").style.format("{:.2f}"), use_container_width=True)
             
-            # 1. Timelines
+            # Reordered layout based on instructions
             if show_timeline:
                 st.markdown("#### Timeline Breakdowns")
                 for fig in line_charts:
@@ -528,12 +596,10 @@ elif app_mode == "Oxygen vs Flow Analysis":
             else:
                 st.info("💡 Timelines are intentionally hidden in 'Custom Date Range' to prevent browser lag. Scroll down for aggregated plots.")
             
-            # 2. Scatterplot
             st.markdown("#### 2D Scatter Correlation")
             fig_scat.update_layout(xaxis_title=flow_col_sel, yaxis_title=o2_col_sel, template="plotly_white", height=450)
             st.plotly_chart(fig_scat, use_container_width=True)
             
-            # 3. Distribution Curves
             st.markdown("#### 1D Parameter Variations (Probability Density)")
             d_col1, d_col2 = st.columns(2)
             fig_dist_flow.update_layout(barmode='overlay', title=f"{flow_col_sel} Distribution", template="plotly_white", height=350, margin=dict(t=40, b=10))
@@ -541,13 +607,11 @@ elif app_mode == "Oxygen vs Flow Analysis":
             d_col1.plotly_chart(fig_dist_flow, use_container_width=True)
             d_col2.plotly_chart(fig_dist_o2, use_container_width=True)
             
-            # 4. 3D Probability Density Surface
             if pooled_flow and pooled_o2:
                 st.markdown("#### 3D Bivariate Density Map (Flow vs Oxygen)")
                 H, xedges, yedges = np.histogram2d(pooled_flow, pooled_o2, bins=30, density=True)
                 fig_3d.add_trace(go.Surface(z=H.T, x=xedges[:-1], y=yedges[:-1], colorscale='Viridis', opacity=0.9))
                 
-                # Prevent scroll zooming from trapping the user on the 3D map
                 fig_3d.update_layout(
                     scene=dict(
                         xaxis_title="Steam Flow", yaxis_title="Oxygen", zaxis_title="Probability Density",
@@ -590,7 +654,6 @@ elif app_mode == "Parameter Correlation Matrix":
             start_t = datetime.combine(target_corr_date, time(0, 0))
             end_t = datetime.combine(target_corr_date, time(23, 59))
 
-    # Core parameters targeted for the heatmap
     target_heatmap_keywords = [
         'boiler pressure', 'steam flow meter', 'boiler capacity', 'furnace pressure',
         'oxygen', 'eco inlet temp', 'deaerator level', 'deaerator temperature',
@@ -604,7 +667,6 @@ elif app_mode == "Parameter Correlation Matrix":
         if target_boiler in cache:
             b_df = cache[target_boiler]
             
-            # Dynamically map the requested keywords to the actual dataset columns
             cols_to_keep = []
             for kw in target_heatmap_keywords:
                 matched_col = find_matching_param(b_df.columns, kw)
@@ -614,7 +676,6 @@ elif app_mode == "Parameter Correlation Matrix":
             w_df = b_df[(b_df['timestamp'] >= start_t) & (b_df['timestamp'] <= end_t)].copy()
             
             if not w_df.empty and cols_to_keep:
-                # Isolate targeted columns and convert to numeric
                 w_df_numeric = w_df[cols_to_keep].apply(pd.to_numeric, errors='coerce')
                 w_df_numeric = w_df_numeric.dropna(axis=1, how='all')
                 
