@@ -169,9 +169,11 @@ def find_matching_param(columns, target_param):
                 if kw in normalize_col(c): return c
     return None
 
-def calculate_window_generation(cache, start_time, end_time, primary_param):
+def calculate_window_generation(cache, target_boilers, start_time, end_time, primary_param):
     totals = {}
-    for b_name, b_df in cache.items():
+    for b_name in target_boilers:
+        if b_name not in cache: continue
+        b_df = cache[b_name]
         m_param = find_matching_param(b_df.columns, primary_param)
         if m_param:
             e_df = b_df[(b_df['timestamp'] >= pd.to_datetime(start_time)) & (b_df['timestamp'] <= pd.to_datetime(end_time))].copy()
@@ -183,7 +185,7 @@ def calculate_window_generation(cache, start_time, end_time, primary_param):
                 totals[b_name] = 0.0
         else:
             totals[b_name] = 0.0
-    totals['Total'] = sum(totals.values())
+    totals['Total Generation'] = sum(totals.values())
     return totals
 
 # ==============================================================================
@@ -196,7 +198,6 @@ if cache_data_result[0] is None:
     
 cache, all_params, (min_date, max_date) = cache_data_result
 
-# Calculate robust parameter defaults safely once
 default_flow_idx = 0
 default_press_idx = 1
 default_o2_idx = 0
@@ -216,25 +217,24 @@ for i, p in enumerate(all_params):
 # ==============================================================================
 # VERTICAL SIDEBAR NAVIGATION
 # ==============================================================================
-st.sidebar.title("🏭 Navigation")
+st.sidebar.title("Navigation")
 app_mode = st.sidebar.radio("Select View:", [
-    "⚠️ Zero-Flow Event Analytics",
-    "📊 Shift Totalizer & Custom Timeline",
-    "⚙️ Oxygen vs Flow Analysis",
-    "🔥 Parameter Correlation Matrix"
+    "Zero-Flow Event Analytics",
+    "Shift Totalizer & Custom Timeline",
+    "Oxygen vs Flow Analysis",
+    "Parameter Correlation Matrix"
 ])
 
 # ==============================================================================
 # 1. ZERO-FLOW EVENT ANALYTICS
 # ==============================================================================
-if app_mode == "⚠️ Zero-Flow Event Analytics":
+if app_mode == "Zero-Flow Event Analytics":
     st.title("Zero-Flow Event Analytics")
     
-    with st.expander("Analysis Parameters", expanded=True):
-        colA, colB, colC = st.columns(3)
+    with st.expander("Event Parameters", expanded=True):
+        colA, colB = st.columns(2)
         sel_min_dur = colA.slider("Minimum Zero-Flow Duration (mins)", 0, 60, 2)
-        sel_boiler = colB.selectbox("Reference Boiler", options=list(cache.keys()))
-        sel_view = colC.radio("View Mode", options=["Aligned Multi-Boiler", "Single Boiler Only"], horizontal=True)
+        target_boilers = colB.multiselect("Select Boiler(s) to Analyze", list(cache.keys()), default=list(cache.keys()), key="z_boilers")
         
         c1, c2 = st.columns(2)
         sel_param = c1.selectbox("Primary Parameter (Y1 / Flow Metric)", options=all_params, index=default_flow_idx, key="z_p1")
@@ -242,37 +242,34 @@ if app_mode == "⚠️ Zero-Flow Event Analytics":
 
     events_df = extract_events(cache, sel_min_dur)
     
-    if events_df.empty:
-        st.warning("No zero-flow events match the specified duration criteria.")
+    if events_df.empty or not target_boilers:
+        st.warning("No zero-flow events match the specified criteria or no boilers selected.")
     else:
-        filtered_events = events_df[events_df['boiler'] == sel_boiler]
+        filtered_events = events_df[events_df['boiler'].isin(target_boilers)]
         dates = sorted(filtered_events['date'].unique()) if not filtered_events.empty else []
         
         c_date, c_event = st.columns(2)
         sel_date = c_date.selectbox("Event Date", options=dates if dates else ["No Events"])
         
         date_events = filtered_events[filtered_events['date'] == sel_date] if sel_date != "No Events" else pd.DataFrame()
-        event_opts = {row['label']: idx for idx, row in date_events.iterrows()} if not date_events.empty else {"No matching events": None}
+        event_opts = {f"{row['boiler']} - {row['label']}": idx for idx, row in date_events.iterrows()} if not date_events.empty else {"No matching events": None}
         sel_event_label = c_event.selectbox("Select Specific Time Window", options=list(event_opts.keys()))
         
         event_id = event_opts.get(sel_event_label)
         if event_id is not None:
             ev = events_df.loc[event_id]
-            boilers_to_plot = [ev['boiler']] if sel_view == "Single Boiler Only" else list(cache.keys())
             
             st.markdown("---")
             if 'flow' in sel_param.lower():
-                totals = calculate_window_generation(cache, ev['start_time'], ev['end_time'], sel_param)
-                m1, m2, m3, m4, m5 = st.columns(5)
-                m1.metric("Event Duration", f"{ev['duration_mins']:.1f} min")
-                m2.metric("Overall Lost/Gen (Tons)", f"{totals['Total']:.1f}")
-                m3.metric("B1 Generation (Tons)", f"{totals.get('Boiler 1', 0):.1f}")
-                m4.metric("B2 Generation (Tons)", f"{totals.get('Boiler 2', 0):.1f}")
-                m5.metric("B3 Generation (Tons)", f"{totals.get('Boiler 3', 0):.1f}")
+                totals = calculate_window_generation(cache, target_boilers, ev['start_time'], ev['end_time'], sel_param)
+                cols = st.columns(len(totals) + 1)
+                cols[0].metric("Event Duration", f"{ev['duration_mins']:.1f} min")
+                for idx, (label, val) in enumerate(totals.items()):
+                    cols[idx + 1].metric(f"{label} (Tons)", f"{val:.1f}")
 
             st.markdown(f"#### Primary Timeline: {sel_param}")
             fig1 = go.Figure()
-            for b_name in boilers_to_plot:
+            for b_name in target_boilers:
                 if b_name not in cache: continue
                 b_df = cache[b_name]
                 m_param_found = find_matching_param(b_df.columns, sel_param)
@@ -287,7 +284,7 @@ if app_mode == "⚠️ Zero-Flow Event Analytics":
             st.plotly_chart(fig1, use_container_width=True)
 
             st.markdown(f"#### Correlation Analysis: {sel_param} (Solid) vs {sel_param2} (Dotted)")
-            for b_name in boilers_to_plot:
+            for b_name in target_boilers:
                 if b_name not in cache: continue
                 b_df = cache[b_name]
                 m_param1 = find_matching_param(b_df.columns, sel_param)
@@ -311,7 +308,7 @@ if app_mode == "⚠️ Zero-Flow Event Analytics":
 
             st.markdown(f"#### Aggregate Factory Sum ({sel_param})")
             sum_df = pd.DataFrame()
-            for b_name in boilers_to_plot:
+            for b_name in target_boilers:
                 if b_name not in cache: continue
                 b_df = cache[b_name]
                 m_param_found = find_matching_param(b_df.columns, sel_param)
@@ -335,17 +332,18 @@ if app_mode == "⚠️ Zero-Flow Event Analytics":
 # ==============================================================================
 # 2. SHIFT TOTALIZER & CUSTOM TIMELINE
 # ==============================================================================
-elif app_mode == "📊 Shift Totalizer & Custom Timeline":
+elif app_mode == "Shift Totalizer & Custom Timeline":
     st.title("Shift Totalizer & Custom Timeline")
     
-    c1, c2 = st.columns(2)
-    sel_param = c1.selectbox("Flow Metric for Calculation", options=all_params, index=default_flow_idx)
-    sel_view = c2.radio("Chart View Mode", options=["Aligned Multi-Boiler", "Single Boiler Only"], horizontal=True)
+    with st.expander("Analysis Configuration", expanded=True):
+        c1, c2 = st.columns(2)
+        target_boilers = c1.multiselect("Select Boiler(s)", list(cache.keys()), default=list(cache.keys()), key="s_boilers")
+        sel_param = c2.selectbox("Flow Metric for Calculation", options=all_params, index=default_flow_idx, key="s_param")
 
     st.markdown("### Daily & Shift Consumption Totalizer")
     target_date = st.date_input("Select Production Date", value=min_date, min_value=min_date, max_value=max_date)
     
-    if target_date:
+    if target_date and target_boilers:
         shift_A_start = datetime.combine(target_date - timedelta(days=1), time(22, 0))
         shift_A_end = datetime.combine(target_date, time(6, 0))
         shift_B_start = datetime.combine(target_date, time(6, 0))
@@ -353,9 +351,9 @@ elif app_mode == "📊 Shift Totalizer & Custom Timeline":
         shift_C_start = datetime.combine(target_date, time(14, 0))
         shift_C_end = datetime.combine(target_date, time(22, 0))
         
-        shift_A = calculate_window_generation(cache, shift_A_start, shift_A_end, sel_param)
-        shift_B = calculate_window_generation(cache, shift_B_start, shift_B_end, sel_param)
-        shift_C = calculate_window_generation(cache, shift_C_start, shift_C_end, sel_param)
+        shift_A = calculate_window_generation(cache, target_boilers, shift_A_start, shift_A_end, sel_param)
+        shift_B = calculate_window_generation(cache, target_boilers, shift_B_start, shift_B_end, sel_param)
+        shift_C = calculate_window_generation(cache, target_boilers, shift_C_start, shift_C_end, sel_param)
         
         full_day = {k: shift_A.get(k, 0) + shift_B.get(k, 0) + shift_C.get(k, 0) for k in shift_A.keys()}
         shift_data = {
@@ -373,13 +371,12 @@ elif app_mode == "📊 Shift Totalizer & Custom Timeline":
     explore_date = colX.date_input("Select Date to Explore", value=min_date, min_value=min_date, max_value=max_date, key="exp_date")
     time_range = colY.slider("Select Time Range", value=(time(0, 0), time(23, 59)), format="HH:mm", key="exp_time")
     
-    if explore_date:
+    if explore_date and target_boilers:
         start_dt = datetime.combine(explore_date, time_range[0])
         end_dt = datetime.combine(explore_date, time_range[1])
-        boilers_to_plot_exp = list(cache.keys()) if sel_view == "Aligned Multi-Boiler" else [st.selectbox("Select Boiler", list(cache.keys()), key="exp_boiler")]
         
         fig_exp = go.Figure()
-        for b_name in boilers_to_plot_exp:
+        for b_name in target_boilers:
             if b_name not in cache: continue
             b_df = cache[b_name]
             m_param_found = find_matching_param(b_df.columns, sel_param)
@@ -397,7 +394,7 @@ elif app_mode == "📊 Shift Totalizer & Custom Timeline":
 # ==============================================================================
 # 3. OXYGEN VS FLOW ANALYSIS
 # ==============================================================================
-elif app_mode == "⚙️ Oxygen vs Flow Analysis":
+elif app_mode == "Oxygen vs Flow Analysis":
     st.title("Oxygen vs Flow Analysis")
     
     with st.expander("Analysis Configuration", expanded=True):
@@ -549,6 +546,8 @@ elif app_mode == "⚙️ Oxygen vs Flow Analysis":
                 st.markdown("#### 3D Bivariate Density Map (Flow vs Oxygen)")
                 H, xedges, yedges = np.histogram2d(pooled_flow, pooled_o2, bins=30, density=True)
                 fig_3d.add_trace(go.Surface(z=H.T, x=xedges[:-1], y=yedges[:-1], colorscale='Viridis', opacity=0.9))
+                
+                # Prevent scroll zooming from trapping the user on the 3D map
                 fig_3d.update_layout(
                     scene=dict(
                         xaxis_title="Steam Flow", yaxis_title="Oxygen", zaxis_title="Probability Density",
@@ -556,19 +555,19 @@ elif app_mode == "⚙️ Oxygen vs Flow Analysis":
                     ),
                     height=600, margin=dict(t=10, b=10)
                 )
-                st.plotly_chart(fig_3d, use_container_width=True)
+                st.plotly_chart(fig_3d, use_container_width=True, config={'scrollZoom': False})
         else:
             st.warning("No valid overlapping data points found.")
 
 # ==============================================================================
 # 4. PARAMETER CORRELATION MATRIX
 # ==============================================================================
-elif app_mode == "🔥 Parameter Correlation Matrix":
+elif app_mode == "Parameter Correlation Matrix":
     st.title("Parameter Correlation Matrix")
     
     with st.expander("Analysis Configuration", expanded=True):
         col1, col2 = st.columns([1, 1.5])
-        target_boiler = col1.selectbox("Select Boiler", list(cache.keys()), key="corr_boiler")
+        target_boilers = col1.multiselect("Select Boiler(s)", list(cache.keys()), default=[list(cache.keys())[0]], key="corr_boilers")
         preset_shift = col2.selectbox("Analysis Window", [
             "Full Day (00:00 - 23:59)", 
             "Shift A (22:00 - 06:00)", 
@@ -591,41 +590,55 @@ elif app_mode == "🔥 Parameter Correlation Matrix":
             start_t = datetime.combine(target_corr_date, time(0, 0))
             end_t = datetime.combine(target_corr_date, time(23, 59))
 
-    if target_boiler in cache:
-        b_df = cache[target_boiler]
-        w_df = b_df[(b_df['timestamp'] >= start_t) & (b_df['timestamp'] <= end_t)].copy()
-        
-        if not w_df.empty:
-            # Convert everything possible to numeric for correlation calculation
-            w_df_numeric = w_df.drop(columns=['timestamp'], errors='ignore')
-            w_df_numeric = w_df_numeric.apply(pd.to_numeric, errors='coerce')
+    # Core parameters targeted for the heatmap
+    target_heatmap_keywords = [
+        'boiler pressure', 'steam flow meter', 'boiler capacity', 'furnace pressure',
+        'oxygen', 'eco inlet temp', 'deaerator level', 'deaerator temperature',
+        'fuel feeding screw', 'rotary feeder screw', 'eco outlet temp',
+        'pa flash temp', 'fw eco ol temperature'
+    ]
+
+    for target_boiler in target_boilers:
+        st.markdown("---")
+        st.markdown(f"#### Correlation Heatmap: {target_boiler}")
+        if target_boiler in cache:
+            b_df = cache[target_boiler]
             
-            # Drop columns that are completely empty (100% NaN)
-            w_df_numeric = w_df_numeric.dropna(axis=1, how='all')
+            # Dynamically map the requested keywords to the actual dataset columns
+            cols_to_keep = []
+            for kw in target_heatmap_keywords:
+                matched_col = find_matching_param(b_df.columns, kw)
+                if matched_col and matched_col not in cols_to_keep:
+                    cols_to_keep.append(matched_col)
             
-            if not w_df_numeric.empty and w_df_numeric.shape[1] > 1:
-                # Calculate Pearson Correlation Matrix
-                corr_matrix = w_df_numeric.corr(numeric_only=True)
+            w_df = b_df[(b_df['timestamp'] >= start_t) & (b_df['timestamp'] <= end_t)].copy()
+            
+            if not w_df.empty and cols_to_keep:
+                # Isolate targeted columns and convert to numeric
+                w_df_numeric = w_df[cols_to_keep].apply(pd.to_numeric, errors='coerce')
+                w_df_numeric = w_df_numeric.dropna(axis=1, how='all')
                 
-                fig_corr = go.Figure(data=go.Heatmap(
-                    z=corr_matrix.values,
-                    x=corr_matrix.columns,
-                    y=corr_matrix.index,
-                    colorscale='RdBu_r',  # Blue for positive, Red/Orange for negative
-                    zmin=-1, zmax=1,
-                    hovertemplate="X: %{x}<br>Y: %{y}<br>Correlation: %{z:.2f}<extra></extra>"
-                ))
-                
-                fig_corr.update_layout(
-                    title=f"Pearson Correlation Map - {target_boiler} ({preset_shift})",
-                    template="plotly_white",
-                    height=800,
-                    margin=dict(t=40, b=150, l=150),
-                    xaxis=dict(tickangle=45)
-                )
-                
-                st.plotly_chart(fig_corr, use_container_width=True)
+                if not w_df_numeric.empty and w_df_numeric.shape[1] > 1:
+                    corr_matrix = w_df_numeric.corr(numeric_only=True)
+                    
+                    fig_corr = go.Figure(data=go.Heatmap(
+                        z=corr_matrix.values,
+                        x=corr_matrix.columns,
+                        y=corr_matrix.index,
+                        colorscale='RdBu_r',
+                        zmin=-1, zmax=1,
+                        hovertemplate="Variable X: %{x}<br>Variable Y: %{y}<br>Pearson Correlation: %{z:.2f}<extra></extra>"
+                    ))
+                    
+                    fig_corr.update_layout(
+                        template="plotly_white",
+                        height=600,
+                        margin=dict(t=20, b=150, l=150),
+                        xaxis=dict(tickangle=45)
+                    )
+                    
+                    st.plotly_chart(fig_corr, use_container_width=True)
+                else:
+                    st.warning(f"Not enough valid numeric data in {target_boiler} for the selected parameters to map correlations.")
             else:
-                st.warning("Not enough numeric variables found in this time window to generate a correlation matrix.")
-        else:
-            st.warning("No data available for the selected date and shift.")
+                st.warning(f"No targeted parameters found or no data available for {target_boiler} during this shift.")
