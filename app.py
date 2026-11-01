@@ -394,19 +394,16 @@ with tab3:
         st.plotly_chart(fig_exp, use_container_width=True)
 
 # ==============================================================================
-# TAB 4: OXYGEN VS FLOW ANALYSIS (NEW)
+# TAB 4: OXYGEN VS FLOW ANALYSIS (MULTIPLE BOILERS & AGGREGATIONS)
 # ==============================================================================
 with tab4:
-    st.markdown("### Oxygen vs. Steam Flow Correlation")
+    st.markdown("### Multiple Boiler Correlation: Flow vs Oxygen")
     
-    col1, col2, col3 = st.columns([1, 2, 2])
-    target_b = col1.selectbox("Select Boiler", list(cache.keys()), key="o2_boiler")
-    
-    # Preset shifts dropdown for easy selection
+    col1, col2, col3 = st.columns([1.5, 1.5, 1])
+    target_boilers = col1.multiselect("Select Boiler(s)", list(cache.keys()), default=list(cache.keys()), key="o2_boilers")
     preset_shift = col2.selectbox("Quick Time Preset", ["Custom", "Shift A (22:00 - 06:00)", "Shift B (06:00 - 14:00)", "Shift C (14:00 - 22:00)", "Full Day (00:00 - 23:59)"])
     target_o2_date = col3.date_input("Target Date", value=min_date, min_value=min_date, max_value=max_date, key="o2_date")
     
-    # Determine start and end times based on preset
     if preset_shift == "Shift A (22:00 - 06:00)":
         start_t = datetime.combine(target_o2_date - timedelta(days=1), time(22, 0))
         end_t = datetime.combine(target_o2_date, time(6, 0))
@@ -420,58 +417,77 @@ with tab4:
         start_t = datetime.combine(target_o2_date, time(0, 0))
         end_t = datetime.combine(target_o2_date, time(23, 59))
     else:
-        # Custom time selection if "Custom" is active
         custom_tr = st.slider("Custom Time Window", value=(time(0, 0), time(23, 59)), format="HH:mm", key="o2_time")
         start_t = datetime.combine(target_o2_date, custom_tr[0])
         end_t = datetime.combine(target_o2_date, custom_tr[1])
 
-    # Allow users to override the detected columns
     col4, col5 = st.columns(2)
     flow_col_sel = col4.selectbox("X-Axis (Flow Metric)", options=all_params, index=default_flow_idx, key="o2_x")
-    o2_col_sel = col5.selectbox("Y-Axis (Oxygen Metric)", options=all_params, index=default_o2_idx, key="o2_y")
+    o2_col_sel = col5.selectbox("Y-Axis (Oxygen/Secondary Metric)", options=all_params, index=default_o2_idx, key="o2_y")
     
-    if target_b in cache:
-        b_df_o2 = cache[target_b]
-        col_f = find_matching_param(b_df_o2.columns, flow_col_sel)
-        col_o = find_matching_param(b_df_o2.columns, o2_col_sel)
+    if target_boilers:
+        fig_o2_time = make_subplots(specs=[[{"secondary_y": True}]])
+        fig_scat = go.Figure()
+        stats_data = []
         
-        if col_f and col_o:
-            w_df_o2 = b_df_o2[(b_df_o2['timestamp'] >= start_t) & (b_df_o2['timestamp'] <= end_t)].copy()
-            w_df_o2['Flow_Num'] = pd.to_numeric(w_df_o2[col_f], errors='coerce')
-            w_df_o2['O2_Num'] = pd.to_numeric(w_df_o2[col_o], errors='coerce')
-            w_df_o2 = w_df_o2.dropna(subset=['Flow_Num', 'O2_Num'])
+        for b_name in target_boilers:
+            if b_name in cache:
+                b_df_o2 = cache[b_name]
+                col_f = find_matching_param(b_df_o2.columns, flow_col_sel)
+                col_o = find_matching_param(b_df_o2.columns, o2_col_sel)
+                
+                if col_f and col_o:
+                    w_df_o2 = b_df_o2[(b_df_o2['timestamp'] >= start_t) & (b_df_o2['timestamp'] <= end_t)].copy()
+                    w_df_o2['Flow_Num'] = pd.to_numeric(w_df_o2[col_f], errors='coerce')
+                    w_df_o2['O2_Num'] = pd.to_numeric(w_df_o2[col_o], errors='coerce')
+                    w_df_o2 = w_df_o2.dropna(subset=['Flow_Num', 'O2_Num'])
+                    
+                    if not w_df_o2.empty:
+                        stats_data.append({
+                            "Boiler": b_name,
+                            f"Min {flow_col_sel}": w_df_o2['Flow_Num'].min(),
+                            f"Avg {flow_col_sel}": w_df_o2['Flow_Num'].mean(),
+                            f"Max {flow_col_sel}": w_df_o2['Flow_Num'].max(),
+                            f"Min {o2_col_sel}": w_df_o2['O2_Num'].min(),
+                            f"Avg {o2_col_sel}": w_df_o2['O2_Num'].mean(),
+                            f"Max {o2_col_sel}": w_df_o2['O2_Num'].max(),
+                        })
+                        
+                        fig_o2_time.add_trace(go.Scatter(
+                            x=w_df_o2['timestamp'], y=w_df_o2['Flow_Num'],
+                            name=f"{b_name} {flow_col_sel}", line=dict(color=B_COLORS.get(b_name), width=2)
+                        ), secondary_y=False)
+                        
+                        fig_o2_time.add_trace(go.Scatter(
+                            x=w_df_o2['timestamp'], y=w_df_o2['O2_Num'],
+                            name=f"{b_name} {o2_col_sel}", line=dict(color=B_COLORS.get(b_name), width=2, dash='dot')
+                        ), secondary_y=True)
+                        
+                        fig_scat.add_trace(go.Scatter(
+                            x=w_df_o2['Flow_Num'], y=w_df_o2['O2_Num'], mode='markers',
+                            name=b_name,
+                            marker=dict(color=B_COLORS.get(b_name), size=6, opacity=0.7),
+                            text=w_df_o2['timestamp'].dt.strftime('%H:%M:%S'), hoverinfo="text+x+y+name"
+                        ))
+        
+        if stats_data:
+            st.markdown("#### Period Statistics Summary")
+            stats_df = pd.DataFrame(stats_data).set_index("Boiler")
+            st.dataframe(stats_df.style.format("{:.2f}"), use_container_width=True)
             
-            if not w_df_o2.empty:
-                # 1. Dual-Axis Time Series
-                st.markdown(f"#### Timeline: {col_f} vs {col_o}")
-                fig_o2_time = make_subplots(specs=[[{"secondary_y": True}]])
-                fig_o2_time.add_trace(go.Scatter(
-                    x=w_df_o2['timestamp'], y=w_df_o2['Flow_Num'],
-                    name=col_f, line=dict(color=B_COLORS.get(target_b), width=2)
-                ), secondary_y=False)
-                fig_o2_time.add_trace(go.Scatter(
-                    x=w_df_o2['timestamp'], y=w_df_o2['O2_Num'],
-                    name=col_o, line=dict(color=SEC_COLOR, width=2, dash='dot')
-                ), secondary_y=True)
-                
-                fig_o2_time.update_layout(template="plotly_white", hovermode="x unified", height=400, margin=dict(t=10, b=10))
-                fig_o2_time.update_yaxes(title_text=col_f, secondary_y=False, color=B_COLORS.get(target_b))
-                fig_o2_time.update_yaxes(title_text=col_o, secondary_y=True, color=SEC_COLOR)
-                st.plotly_chart(fig_o2_time, use_container_width=True)
-                
-                # 2. Scatter Correlation
-                st.markdown(f"#### Scatter Correlation")
-                fig_scat = go.Figure(data=go.Scatter(
-                    x=w_df_o2['Flow_Num'], y=w_df_o2['O2_Num'], mode='markers',
-                    marker=dict(color=B_COLORS.get(target_b), size=6, opacity=0.7),
-                    text=w_df_o2['timestamp'].dt.strftime('%H:%M:%S'), hoverinfo="text+x+y"
-                ))
-                fig_scat.update_layout(
-                    xaxis_title=col_f, yaxis_title=col_o, 
-                    template="plotly_white", height=400, margin=dict(t=10, b=10)
-                )
-                st.plotly_chart(fig_scat, use_container_width=True)
-            else:
-                st.warning("No valid overlapping data points for Flow and Oxygen in the selected time window.")
+            st.markdown(f"#### Combined Timeline: {flow_col_sel} (Solid) vs {o2_col_sel} (Dotted)")
+            fig_o2_time.update_layout(template="plotly_white", hovermode="x unified", height=450, margin=dict(t=10, b=10))
+            fig_o2_time.update_yaxes(title_text=flow_col_sel, secondary_y=False)
+            fig_o2_time.update_yaxes(title_text=o2_col_sel, secondary_y=True)
+            st.plotly_chart(fig_o2_time, use_container_width=True)
+            
+            st.markdown("#### Scatter Correlation (Multi-Boiler)")
+            fig_scat.update_layout(
+                xaxis_title=flow_col_sel, yaxis_title=o2_col_sel, 
+                template="plotly_white", height=450, margin=dict(t=10, b=10)
+            )
+            st.plotly_chart(fig_scat, use_container_width=True)
         else:
-            st.error("Could not locate the selected columns in the dataset for this boiler.")
+            st.warning("No valid overlapping data points for Flow and Oxygen in the selected time window for the chosen boilers.")
+    else:
+        st.info("Please select at least one boiler from the dropdown to view the analysis.")
