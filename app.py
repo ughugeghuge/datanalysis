@@ -5,8 +5,9 @@ import re
 from datetime import timedelta, datetime, time
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
-import io
 from pathlib import Path
+import warnings
+warnings.filterwarnings('ignore')
 
 st.set_page_config(page_title="Boiler Analytics Platform", layout="wide", initial_sidebar_state="expanded")
 
@@ -118,18 +119,13 @@ def process_local_files(data_dir='./boiler_data'):
     if not cache: return None, None, []
     
     all_params = sorted(list({str(c) for b in cache.values() for c in b.columns if c != 'timestamp'}))
-    
     all_dates = pd.concat([b['timestamp'] for b in cache.values()])
-    min_date = all_dates.min().date()
-    max_date = all_dates.max().date()
-    
-    return cache, all_params, (min_date, max_date)
+    return cache, all_params, (all_dates.min().date(), all_dates.max().date())
 
 @st.cache_data
 def extract_events(data_cache, min_dur_minutes):
     events = []
     idx = 1
-    
     def detect_steam_flow_col(columns):
         cols_no_ts = [c for c in columns if c != 'timestamp']
         for c in cols_no_ts:
@@ -211,18 +207,14 @@ default_o2_idx = 0
 
 for i, p in enumerate(all_params):
     p_lower = p.lower()
-    
-    # Prioritize precise match to avoid taking "Totalizer" by mistake
     if p_lower == 'steam flow meter':
         default_flow_idx = i
     elif ('steam flow' in p_lower or 'flow meter' in p_lower) and all_params[default_flow_idx].lower() != 'steam flow meter':
         default_flow_idx = i
-        
     if p_lower == 'boiler pressure':
         default_press_idx = i
     elif ('boiler pressure' in p_lower or 'steam pressure' in p_lower) and all_params[default_press_idx].lower() != 'boiler pressure':
         default_press_idx = i
-        
     if 'oxygen' in p_lower or 'o2' in p_lower:
         default_o2_idx = i
 
@@ -230,14 +222,14 @@ sel_param = st.sidebar.selectbox("Primary Parameter (Y1 / Flow Metric)", options
 sel_param2 = st.sidebar.selectbox("Secondary Parameter (Y2)", options=all_params, index=default_press_idx)
 sel_view = st.sidebar.radio("View Mode", options=["Aligned Multi-Boiler", "Single Boiler Only"])
 
-tab1, tab2, tab3, tab4 = st.tabs(["Zero-Flow Event Analytics", "Shift & Daily Totalizer", "Custom Day Explorer", "Oxygen vs Flow Analysis"])
+# Reorganized into 3 distinct tabs
+tab1, tab2, tab3 = st.tabs(["Zero-Flow Event Analytics", "Shift Totalizer & Custom Timeline", "Oxygen vs Flow Analysis"])
 
 # ==============================================================================
 # TAB 1: ZERO-FLOW EVENT ANALYTICS
 # ==============================================================================
 with tab1:
     st.markdown("### Event Detection & Analysis")
-    
     colA, colB, colC = st.columns(3)
     sel_min_dur = colA.slider("Minimum Zero-Flow Duration (mins)", 0, 60, 2)
     sel_boiler = colB.selectbox("Reference Boiler", options=list(cache.keys()))
@@ -309,35 +301,11 @@ with tab1:
                 fig_dual.update_layout(title=f"{b_name} Breakdown", template="plotly_white", hovermode="x unified", height=300, margin=dict(t=40, b=10))
                 st.plotly_chart(fig_dual, use_container_width=True)
 
-            st.markdown(f"#### Aggregate Factory Sum ({sel_param})")
-            sum_df = pd.DataFrame()
-            for b_name in boilers_to_plot:
-                if b_name not in cache: continue
-                b_df = cache[b_name]
-                m_param_found = find_matching_param(b_df.columns, sel_param)
-                if m_param_found:
-                    w_df = b_df[(b_df['timestamp'] >= ev['window_start']) & (b_df['timestamp'] <= ev['window_end'])].copy()
-                    w_df = w_df.set_index('timestamp')[m_param_found]
-                    w_df = pd.to_numeric(w_df, errors='coerce').resample('1min').mean().interpolate(method='time')
-                    sum_df[b_name] = w_df
-
-            if not sum_df.empty:
-                sum_df['Aggregate'] = sum_df.sum(axis=1)
-                fig_sum = go.Figure()
-                fig_sum.add_trace(go.Scatter(
-                    x=sum_df.index, y=sum_df['Aggregate'], mode='lines', fill='tozeroy', name="Overall Sum",
-                    line=dict(color=SUM_LINE, width=2), fillcolor=SUM_FILL
-                ))
-                fig_sum.add_vrect(x0=ev['start_time'], x1=ev['end_time'], fillcolor="rgba(220, 38, 38, 0.1)", line_width=1)
-                fig_sum.update_layout(template="plotly_white", hovermode="x unified", height=350, margin=dict(t=10, b=10))
-                st.plotly_chart(fig_sum, use_container_width=True)
-
 # ==============================================================================
-# TAB 2: SHIFT & DAILY TOTALIZER
+# TAB 2: SHIFT TOTALIZER & CUSTOM TIMELINE
 # ==============================================================================
 with tab2:
-    st.markdown("### Daily & Shift Consumption")
-    st.info("Calculates total generated volume (Tons) during standard shifts based on the area under the curve of the selected Flow Metric.")
+    st.markdown("### Daily & Shift Consumption Totalizer")
     
     target_date = st.date_input("Select Production Date", value=min_date, min_value=min_date, max_value=max_date)
     
@@ -354,21 +322,15 @@ with tab2:
         shift_C = calculate_window_generation(cache, shift_C_start, shift_C_end, sel_param)
         
         full_day = {k: shift_A.get(k, 0) + shift_B.get(k, 0) + shift_C.get(k, 0) for k in shift_A.keys()}
-        
         shift_data = {
             "Shift A (10 PM - 6 AM)": shift_A,
             "Shift B (6 AM - 2 PM)": shift_B,
             "Shift C (2 PM - 10 PM)": shift_C,
             "Full Day Total": full_day
         }
-        
-        shift_df = pd.DataFrame.from_dict(shift_data, orient='index')
-        st.dataframe(shift_df.style.format("{:.1f} Tons"), use_container_width=True)
+        st.dataframe(pd.DataFrame.from_dict(shift_data, orient='index').style.format("{:.1f} Tons"), use_container_width=True)
 
-# ==============================================================================
-# TAB 3: CUSTOM DAY EXPLORER
-# ==============================================================================
-with tab3:
+    st.markdown("---")
     st.markdown("### Custom Timeline Explorer")
     
     colX, colY = st.columns(2)
@@ -378,7 +340,6 @@ with tab3:
     if explore_date:
         start_dt = datetime.combine(explore_date, time_range[0])
         end_dt = datetime.combine(explore_date, time_range[1])
-        
         boilers_to_plot_exp = list(cache.keys()) if sel_view == "Aligned Multi-Boiler" else [st.selectbox("Select Boiler", list(cache.keys()), key="exp_boiler")]
         
         fig_exp = go.Figure()
@@ -394,21 +355,21 @@ with tab3:
                     x=w_df['timestamp'], y=pd.to_numeric(w_df[m_param_found], errors='coerce'),
                     mode='lines', name=f"{b_name} ({m_param_found})", line=dict(color=B_COLORS.get(b_name), width=1.5)
                 ))
-                
-        fig_exp.update_layout(title=f"Custom Timeline: {sel_param}", template="plotly_white", hovermode="x unified", height=550)
+        fig_exp.update_layout(template="plotly_white", hovermode="x unified", height=450)
         st.plotly_chart(fig_exp, use_container_width=True)
 
 # ==============================================================================
-# TAB 4: OXYGEN VS FLOW ANALYSIS (MULTIPLE BOILERS & AGGREGATIONS)
+# TAB 3: OXYGEN VS FLOW ANALYSIS (3D & DISTRIBUTIONS)
 # ==============================================================================
-with tab4:
-    st.markdown("### Multiple Boiler Correlation: Flow vs Oxygen")
+with tab3:
+    st.markdown("### Advanced Boiler Correlation & Distribution (Flow vs Oxygen)")
+    st.info("💡 **Diagnostic Note:** If you see large clusters or vertical pillars at Oxygen = 9.0%, the sensor is likely pegged/failed and returning a default system value.")
     
     col1, col2 = st.columns([1, 1.5])
     target_boilers = col1.multiselect("Select Boiler(s)", list(cache.keys()), default=list(cache.keys()), key="o2_boilers")
-    preset_shift = col2.selectbox("Quick Time Preset", [
+    preset_shift = col2.selectbox("Analysis Window", [
         "Custom Time (Single Day)", 
-        "Custom Date Range (Scatter Only)", 
+        "Custom Date Range", 
         "Shift A (22:00 - 06:00)", 
         "Shift B (06:00 - 14:00)", 
         "Shift C (14:00 - 22:00)", 
@@ -416,13 +377,13 @@ with tab4:
     ])
     
     show_timeline = True
-    if preset_shift == "Custom Date Range (Scatter Only)":
+    if preset_shift == "Custom Date Range":
         d1, d2 = st.columns(2)
         start_d = d1.date_input("Start Date", value=min_date, min_value=min_date, max_value=max_date, key="o2_start_d")
         end_d = d2.date_input("End Date", value=max_date, min_value=min_date, max_value=max_date, key="o2_end_d")
         start_t = datetime.combine(start_d, time(0, 0))
         end_t = datetime.combine(end_d, time(23, 59))
-        show_timeline = False # Protects PC load on big selections
+        show_timeline = False 
     else:
         target_o2_date = st.date_input("Target Date", value=min_date, min_value=min_date, max_value=max_date, key="o2_date")
         if preset_shift == "Shift A (22:00 - 06:00)":
@@ -445,13 +406,21 @@ with tab4:
     st.markdown("---")
     col4, col5, col6 = st.columns([2, 2, 1])
     flow_col_sel = col4.selectbox("X-Axis (Flow Metric)", options=all_params, index=default_flow_idx, key="o2_x")
-    o2_col_sel = col5.selectbox("Y-Axis (Oxygen/Secondary Metric)", options=all_params, index=default_o2_idx, key="o2_y")
-    op_threshold = col6.number_input("Active Boiler Threshold (Flow >)", value=1.0, step=0.5, help="Filters out shutdown periods from stats & scatterplot.")
+    o2_col_sel = col5.selectbox("Y-Axis (Oxygen Metric)", options=all_params, index=default_o2_idx, key="o2_y")
+    op_threshold = col6.number_input("Active Boiler Threshold (Flow >)", value=1.0, step=0.5, help="Filters out shutdowns to reveal true operating stats.")
     
     if target_boilers:
         fig_scat = go.Figure()
+        fig_dist_flow = go.Figure()
+        fig_dist_o2 = go.Figure()
+        fig_3d = go.Figure()
+        
         stats_data = []
         line_charts = []
+        
+        # Collect pooled data for 3D mapping
+        pooled_flow = []
+        pooled_o2 = []
         
         for b_name in target_boilers:
             if b_name in cache:
@@ -478,6 +447,19 @@ with tab4:
                                 f"Avg {o2_col_sel}": stats_df_o2['O2_Num'].mean(),
                                 f"Max {o2_col_sel}": stats_df_o2['O2_Num'].max(),
                             })
+                            
+                            pooled_flow.extend(stats_df_o2['Flow_Num'].values)
+                            pooled_o2.extend(stats_df_o2['O2_Num'].values)
+                            
+                            # 1D Probability Density Distributions
+                            fig_dist_flow.add_trace(go.Histogram(
+                                x=stats_df_o2['Flow_Num'], histnorm='probability density',
+                                name=b_name, marker_color=B_COLORS.get(b_name), opacity=0.7
+                            ))
+                            fig_dist_o2.add_trace(go.Histogram(
+                                x=stats_df_o2['O2_Num'], histnorm='probability density',
+                                name=b_name, marker_color=B_COLORS.get(b_name), opacity=0.7
+                            ))
                         else:
                             stats_data.append({
                                 "Boiler": b_name,
@@ -495,42 +477,51 @@ with tab4:
                                 x=w_df_o2['timestamp'], y=w_df_o2['O2_Num'],
                                 name=f"{o2_col_sel}", line=dict(color=SEC_COLOR, width=2, dash='dot')
                             ), secondary_y=True)
-                            
-                            fig_line.update_layout(
-                                title=f"{b_name} Breakdown: {flow_col_sel} (Solid) vs {o2_col_sel} (Dotted)", 
-                                template="plotly_white", hovermode="x unified", height=350, margin=dict(t=40, b=10)
-                            )
-                            fig_line.update_yaxes(title_text=flow_col_sel, secondary_y=False)
-                            fig_line.update_yaxes(title_text=o2_col_sel, secondary_y=True)
+                            fig_line.update_layout(title=f"{b_name} Breakdown", template="plotly_white", hovermode="x unified", height=300, margin=dict(t=40, b=10))
                             line_charts.append(fig_line)
                         
-                        # WebGL Scatter for heavy data
                         fig_scat.add_trace(go.Scattergl(
                             x=stats_df_o2['Flow_Num'], y=stats_df_o2['O2_Num'], mode='markers',
-                            name=b_name,
-                            marker=dict(color=B_COLORS.get(b_name), size=6, opacity=0.7),
-                            text=stats_df_o2['timestamp'].dt.strftime('%H:%M:%S \n%Y-%m-%d'), hoverinfo="text+x+y+name"
+                            name=b_name, marker=dict(color=B_COLORS.get(b_name), size=5, opacity=0.6),
+                            text=stats_df_o2['timestamp'].dt.strftime('%Y-%m-%d %H:%M'), hoverinfo="text+x+y+name"
                         ))
         
         if stats_data:
             st.markdown("#### Period Statistics Summary (Active Operating Flow Only)")
-            stats_df = pd.DataFrame(stats_data).set_index("Boiler")
-            st.dataframe(stats_df.style.format("{:.2f}"), use_container_width=True)
+            st.dataframe(pd.DataFrame(stats_data).set_index("Boiler").style.format("{:.2f}"), use_container_width=True)
+            
+            # Scatterplot rendering
+            st.markdown("#### 2D Scatter Correlation")
+            fig_scat.update_layout(xaxis_title=flow_col_sel, yaxis_title=o2_col_sel, template="plotly_white", height=450)
+            st.plotly_chart(fig_scat, use_container_width=True)
+            
+            # Distribution Curves
+            st.markdown("#### 1D Parameter Variations (Probability Density)")
+            d_col1, d_col2 = st.columns(2)
+            fig_dist_flow.update_layout(barmode='overlay', title=f"{flow_col_sel} Distribution", template="plotly_white", height=350, margin=dict(t=40, b=10))
+            fig_dist_o2.update_layout(barmode='overlay', title=f"{o2_col_sel} Distribution", template="plotly_white", height=350, margin=dict(t=40, b=10))
+            d_col1.plotly_chart(fig_dist_flow, use_container_width=True)
+            d_col2.plotly_chart(fig_dist_o2, use_container_width=True)
+            
+            # 3D Probability Density Surface
+            if pooled_flow and pooled_o2:
+                st.markdown("#### 3D Bivariate Density Map (Flow vs Oxygen)")
+                H, xedges, yedges = np.histogram2d(pooled_flow, pooled_o2, bins=30, density=True)
+                fig_3d.add_trace(go.Surface(z=H.T, x=xedges[:-1], y=yedges[:-1], colorscale='Viridis', opacity=0.9))
+                fig_3d.update_layout(
+                    scene=dict(
+                        xaxis_title="Steam Flow", yaxis_title="Oxygen", zaxis_title="Probability Density",
+                        camera=dict(eye=dict(x=1.5, y=-1.5, z=1.2))
+                    ),
+                    height=600, margin=dict(t=10, b=10)
+                )
+                st.plotly_chart(fig_3d, use_container_width=True)
             
             if show_timeline:
-                st.markdown(f"#### Timeline Breakdowns")
+                st.markdown("#### Timeline Breakdowns")
                 for fig in line_charts:
                     st.plotly_chart(fig, use_container_width=True)
             else:
-                st.info("💡 Timelines are intentionally hidden in 'Custom Date Range' mode to prevent browser crashing on massive datasets. Scroll down for Scatter Plot.")
-            
-            st.markdown("#### Scatter Correlation (Multi-Boiler)")
-            fig_scat.update_layout(
-                xaxis_title=flow_col_sel, yaxis_title=o2_col_sel, 
-                template="plotly_white", height=450, margin=dict(t=10, b=10)
-            )
-            st.plotly_chart(fig_scat, use_container_width=True)
+                st.info("💡 Timelines are intentionally hidden in 'Custom Date Range' to prevent browser lag.")
         else:
-            st.warning("No valid overlapping data points for Flow and Oxygen in the selected time window for the chosen boilers.")
-    else:
-        st.info("Please select at least one boiler from the dropdown to view the analysis.")
+            st.warning("No valid overlapping data points found.")
