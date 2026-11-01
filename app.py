@@ -12,7 +12,7 @@ warnings.filterwarnings('ignore')
 st.set_page_config(page_title="Boiler Analytics Platform", layout="wide", initial_sidebar_state="expanded")
 
 # ==============================================================================
-# UI/UX: PREMIUM APPLE-STYLE SIDEBAR NAVIGATION CSS (FIXED WIDTH & HIDDEN RADIOS)
+# UI/UX: PREMIUM APPLE-STYLE SIDEBAR NAVIGATION CSS (LEFT-ALIGNED & GAPLESS)
 # ==============================================================================
 st.markdown("""
 <style>
@@ -23,39 +23,30 @@ st.markdown("""
 
 /* Radio Group Container */
 [data-testid="stSidebar"] div[role="radiogroup"] {
-    gap: 6px !important;
-    background-color: #f5f5f7;
-    border-radius: 12px;
-    padding: 8px;
-    border: 1px solid #d2d2d7;
+    gap: 4px !important;
     width: 100%;
     display: flex;
     flex-direction: column;
 }
 
-/* Force every option wrapper to take full width */
-[data-testid="stSidebar"] div[role="radiogroup"] > div {
-    width: 100% !important;
-}
-
-/* Base Tab Styling - Uniform Width & Centered */
+/* Base Tab Styling - Uniform Width & Left Aligned */
 [data-testid="stSidebar"] div[role="radiogroup"] label {
-    padding: 12px 10px;
-    border-radius: 8px; /* Clean rectangular look */
+    padding: 12px 16px !important;
+    border-radius: 8px !important; 
     margin: 0px !important;
-    background-color: transparent;
-    border: 1px solid transparent;
+    background-color: transparent !important;
+    border: 1px solid transparent !important;
     transition: all 0.2s ease;
     cursor: pointer;
     width: 100% !important;
     display: flex !important;
-    justify-content: center !important;
+    justify-content: flex-start !important; /* Forces left alignment */
     align-items: center !important;
 }
 
 /* Hover State */
 [data-testid="stSidebar"] div[role="radiogroup"] label:hover {
-    background-color: #e8e8ed;
+    background-color: #e8e8ed !important;
 }
 
 /* Active State Styling - Refined Professional Blue */
@@ -63,7 +54,7 @@ st.markdown("""
 [data-testid="stSidebar"] div[role="radiogroup"] label:has(input:checked) {
     background-color: #0071e3 !important;
     border-color: #0071e3 !important;
-    box-shadow: 0 2px 6px rgba(0, 113, 227, 0.3);
+    box-shadow: 0 2px 6px rgba(0, 113, 227, 0.3) !important;
     position: relative;
     overflow: hidden;
 }
@@ -95,9 +86,8 @@ st.markdown("""
     font-weight: 500;
     z-index: 2; 
     position: relative;
-    text-align: center !important;
+    text-align: left !important;
     width: 100%;
-    white-space: normal;
 }
 
 /* Active Text Color */
@@ -107,17 +97,25 @@ st.markdown("""
     font-weight: 600;
 }
 
-/* FORCE HIDE the baseweb radio circle widget */
-[data-testid="stSidebar"] div[role="radiogroup"] div[data-baseweb="radio"] {
+/* FORCE HIDE THE CIRCULAR RADIO WIDGET */
+[data-testid="stSidebar"] div[role="radiogroup"] label > div:first-child {
     display: none !important;
+    width: 0px !important;
+    margin: 0px !important;
+    padding: 0px !important;
 }
 
-/* Ensure the markdown container expands fully to center text */
-[data-testid="stSidebar"] div[role="radiogroup"] div[data-testid="stMarkdownContainer"] {
+/* Align Markdown Container strictly to the left edge */
+[data-testid="stSidebar"] div[role="radiogroup"] label div[data-testid="stMarkdownContainer"] {
     display: flex !important;
-    justify-content: center !important;
-    align-items: center !important;
+    justify-content: flex-start !important;
     width: 100% !important;
+}
+
+/* Push the 'Data Management' tab down to create space */
+[data-testid="stSidebar"] div[role="radiogroup"] label:last-child {
+    margin-top: 60px !important;
+    border: 1px solid #d2d2d7 !important;
 }
 </style>
 """, unsafe_allow_html=True)
