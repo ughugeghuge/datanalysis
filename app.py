@@ -12,7 +12,7 @@ warnings.filterwarnings('ignore')
 st.set_page_config(page_title="Boiler Analytics Platform", layout="wide", initial_sidebar_state="expanded")
 
 # ==============================================================================
-# UI/UX: MODERN MORPHING SIDEBAR CSS (PILL TOGGLES)
+# UI/UX: MODERN MORPHING SIDEBAR CSS (PILL TOGGLES FIXED)
 # ==============================================================================
 st.markdown("""
 <style>
@@ -28,8 +28,8 @@ st.markdown("""
     transition: all 0.3s ease;
     cursor: pointer;
     display: flex;
-    justify-content: center;
     align-items: center;
+    margin-bottom: 4px;
 }
 [data-testid="stSidebar"] [role="radiogroup"] label:hover {
     background-color: #e2e8f0;
@@ -43,19 +43,20 @@ st.markdown("""
     transform: scale(1.02);
     box-shadow: 0 4px 10px rgba(31, 119, 180, 0.3);
 }
+/* Text Styling */
+[data-testid="stSidebar"] [role="radiogroup"] label p {
+    margin: 0 !important;
+    font-size: 15px;
+    color: #334155;
+}
 [data-testid="stSidebar"] [role="radiogroup"] label[data-checked="true"] p,
 [data-testid="stSidebar"] [role="radiogroup"] label:has(input:checked) p {
     color: white !important;
     font-weight: 600;
 }
-/* Completely hide the radio circle widget */
-[data-testid="stSidebar"] [role="radiogroup"] label div[class*="st-"] {
-    display: none;
-}
-[data-testid="stSidebar"] [role="radiogroup"] label div[data-testid="stMarkdownContainer"] {
-    display: block !important;
-    width: 100%;
-    text-align: center;
+/* Hide only the radio circle widget, keeping the text container visible */
+[data-testid="stSidebar"] [role="radiogroup"] label > div:first-child {
+    display: none !important;
 }
 </style>
 """, unsafe_allow_html=True)
@@ -269,7 +270,7 @@ if all_params:
         if 'oxygen' in p_lower or 'o2' in p_lower: default_o2_idx = i
 
 # ==============================================================================
-# VERTICAL SIDEBAR NAVIGATION & DATA MANAGEMENT
+# VERTICAL SIDEBAR NAVIGATION
 # ==============================================================================
 st.sidebar.title("🏭 Navigation")
 app_mode = st.sidebar.radio("Select View:", [
@@ -277,37 +278,61 @@ app_mode = st.sidebar.radio("Select View:", [
     "Loading pattern",
     "Steam flow vs oxygen variation",
     "System Cross-Analysis",
-    "Parameter Correlation Matrix"
+    "Parameter Correlation Matrix",
+    "Data Management"
 ])
 
-st.sidebar.markdown("---")
-st.sidebar.markdown("### Upload Boiler Data")
-b1_file = st.sidebar.file_uploader("Boiler 1", accept_multiple_files=False, key="up_b1", label_visibility="visible")
-b2_file = st.sidebar.file_uploader("Boiler 2", accept_multiple_files=False, key="up_b2", label_visibility="visible")
-b3_file = st.sidebar.file_uploader("Boiler 3", accept_multiple_files=False, key="up_b3", label_visibility="visible")
-
-if st.sidebar.button("Process & Save Uploads"):
-    data_dir = Path('./boiler_data')
-    data_dir.mkdir(parents=True, exist_ok=True)
+# ==============================================================================
+# DATA MANAGEMENT TAB (NOW IN MAIN VIEW)
+# ==============================================================================
+if app_mode == "Data Management":
+    st.title("Data Management")
+    st.markdown("Upload new raw data files. Ensure you upload the correct file for the corresponding Boiler.")
+    st.markdown("*(Any previously uploaded files for the selected boiler will be maintained alongside the new data).*")
+    st.markdown("---")
     
-    if b1_file:
-        with open(data_dir / f"Boiler1_{b1_file.name}", "wb") as f: f.write(b1_file.getbuffer())
-    if b2_file:
-        with open(data_dir / f"Boiler2_{b2_file.name}", "wb") as f: f.write(b2_file.getbuffer())
-    if b3_file:
-        with open(data_dir / f"Boiler3_{b3_file.name}", "wb") as f: f.write(b3_file.getbuffer())
-        
-    st.cache_data.clear()
-    st.rerun()
+    col1, col2, col3 = st.columns(3)
+    
+    with col1:
+        st.subheader("Boiler 1")
+        b1_file = st.file_uploader("Upload Data for Boiler 1", accept_multiple_files=False, key="up_b1", label_visibility="collapsed")
+    with col2:
+        st.subheader("Boiler 2")
+        b2_file = st.file_uploader("Upload Data for Boiler 2", accept_multiple_files=False, key="up_b2", label_visibility="collapsed")
+    with col3:
+        st.subheader("Boiler 3")
+        b3_file = st.file_uploader("Upload Data for Boiler 3", accept_multiple_files=False, key="up_b3", label_visibility="collapsed")
 
-if not cache:
-    st.warning("No valid data found. Please use the sidebar to upload files for Boiler 1, 2, or 3.")
+    if st.button("Process & Save Active Uploads", type="primary"):
+        data_dir = Path('./boiler_data')
+        data_dir.mkdir(parents=True, exist_ok=True)
+        files_saved = 0
+        
+        if b1_file:
+            with open(data_dir / f"Boiler1_{b1_file.name}", "wb") as f: f.write(b1_file.getbuffer())
+            files_saved += 1
+        if b2_file:
+            with open(data_dir / f"Boiler2_{b2_file.name}", "wb") as f: f.write(b2_file.getbuffer())
+            files_saved += 1
+        if b3_file:
+            with open(data_dir / f"Boiler3_{b3_file.name}", "wb") as f: f.write(b3_file.getbuffer())
+            files_saved += 1
+            
+        if files_saved > 0:
+            st.success(f"Successfully processed and saved {files_saved} file(s).")
+            st.cache_data.clear()
+            st.rerun()
+        else:
+            st.warning("No files were selected for upload.")
+
+elif not cache:
+    st.warning("No valid data found. Please navigate to the 'Data Management' tab and upload your boiler files.")
     st.stop()
 
 # ==============================================================================
 # 1. BOILER OPERATION AND FLOW
 # ==============================================================================
-if app_mode == "Boiler operation and Flow":
+elif app_mode == "Boiler operation and Flow":
     st.title("Boiler Operation and Flow")
     
     with st.expander("Event Parameters", expanded=True):
@@ -721,7 +746,7 @@ elif app_mode == "System Cross-Analysis":
                     fig_eff = make_subplots(specs=[[{"secondary_y": True}]])
                     fig_eff.add_trace(go.Scatter(x=w_df['timestamp'], y=pd.to_numeric(w_df[col_y1], errors='coerce'), name=col_y1, line=dict(color=B_COLORS.get(target_boiler))), secondary_y=False)
                     fig_eff.add_trace(go.Scatter(x=w_df['timestamp'], y=pd.to_numeric(w_df[col_y2], errors='coerce'), name=col_y2, line=dict(color='#d62728', dash='dot')), secondary_y=True)
-                    fig_eff.update_layout(template="plotly_white", hovermode="x unified", height=400, margin=dict(t=10, b=50))
+                    fig_eff.update_layout(title=f"Date: {start_t.date()}", template="plotly_white", hovermode="x unified", height=400, margin=dict(t=40, b=50))
                     fig_eff = set_legend_bottom(fig_eff)
                     st.plotly_chart(fig_eff, use_container_width=True)
                     
