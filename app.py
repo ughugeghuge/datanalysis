@@ -204,17 +204,25 @@ cache, all_params, (min_date, max_date) = cache_data_result
 
 st.sidebar.markdown("### Global Parameters")
 
-# Robust default selection logic
+# Exact-Match Default Selection Logic
 default_flow_idx = 0
 default_press_idx = 1
 default_o2_idx = 0
 
 for i, p in enumerate(all_params):
     p_lower = p.lower()
-    if 'steam flow' in p_lower or 'flow meter' in p_lower:
+    
+    # Prioritize precise match to avoid taking "Totalizer" by mistake
+    if p_lower == 'steam flow meter':
         default_flow_idx = i
-    if 'boiler pressure' in p_lower or 'steam pressure' in p_lower:
+    elif ('steam flow' in p_lower or 'flow meter' in p_lower) and all_params[default_flow_idx].lower() != 'steam flow meter':
+        default_flow_idx = i
+        
+    if p_lower == 'boiler pressure':
         default_press_idx = i
+    elif ('boiler pressure' in p_lower or 'steam pressure' in p_lower) and all_params[default_press_idx].lower() != 'boiler pressure':
+        default_press_idx = i
+        
     if 'oxygen' in p_lower or 'o2' in p_lower:
         default_o2_idx = i
 
@@ -262,7 +270,6 @@ with tab1:
                 m4.metric("B2 Generation (Tons)", f"{totals.get('Boiler 2', 0):.1f}")
                 m5.metric("B3 Generation (Tons)", f"{totals.get('Boiler 3', 0):.1f}")
 
-            # 1. Primary Timeline
             st.markdown(f"#### Primary Timeline: {sel_param}")
             fig1 = go.Figure()
             for b_name in boilers_to_plot:
@@ -279,7 +286,6 @@ with tab1:
             fig1.update_layout(template="plotly_white", hovermode="x unified", height=400, margin=dict(t=10, b=10))
             st.plotly_chart(fig1, use_container_width=True)
 
-            # 2. Dual Axis Full Width
             st.markdown(f"#### Correlation Analysis: {sel_param} (Solid) vs {sel_param2} (Dotted)")
             for b_name in boilers_to_plot:
                 if b_name not in cache: continue
@@ -303,7 +309,6 @@ with tab1:
                 fig_dual.update_layout(title=f"{b_name} Breakdown", template="plotly_white", hovermode="x unified", height=300, margin=dict(t=40, b=10))
                 st.plotly_chart(fig_dual, use_container_width=True)
 
-            # 3. Overall Sum
             st.markdown(f"#### Aggregate Factory Sum ({sel_param})")
             sum_df = pd.DataFrame()
             for b_name in boilers_to_plot:
@@ -399,26 +404,27 @@ with tab3:
 with tab4:
     st.markdown("### Multiple Boiler Correlation: Flow vs Oxygen")
     
-    col1, col2, col3 = st.columns([1.5, 1.5, 1])
+    col1, col2 = st.columns([1, 1.5])
     target_boilers = col1.multiselect("Select Boiler(s)", list(cache.keys()), default=list(cache.keys()), key="o2_boilers")
-    preset_shift = col2.selectbox("Quick Time Preset", ["Custom Time (Single Day)", "Custom Date Range", "Shift A (22:00 - 06:00)", "Shift B (06:00 - 14:00)", "Shift C (14:00 - 22:00)", "Full Day (00:00 - 23:59)"])
+    preset_shift = col2.selectbox("Quick Time Preset", [
+        "Custom Time (Single Day)", 
+        "Custom Date Range (Scatter Only)", 
+        "Shift A (22:00 - 06:00)", 
+        "Shift B (06:00 - 14:00)", 
+        "Shift C (14:00 - 22:00)", 
+        "Full Day (00:00 - 23:59)"
+    ])
     
-    if preset_shift == "Custom Date Range":
-        date_sel = col3.date_input("Target Date Range", value=(min_date, max_date), min_value=min_date, max_value=max_date, key="o2_dr")
-        if isinstance(date_sel, tuple):
-            if len(date_sel) == 2:
-                start_d, end_d = date_sel
-            elif len(date_sel) == 1:
-                start_d, end_d = date_sel[0], date_sel[0]
-            else:
-                start_d, end_d = min_date, max_date
-        else:
-            start_d, end_d = date_sel, date_sel
+    show_timeline = True
+    if preset_shift == "Custom Date Range (Scatter Only)":
+        d1, d2 = st.columns(2)
+        start_d = d1.date_input("Start Date", value=min_date, min_value=min_date, max_value=max_date, key="o2_start_d")
+        end_d = d2.date_input("End Date", value=max_date, min_value=min_date, max_value=max_date, key="o2_end_d")
         start_t = datetime.combine(start_d, time(0, 0))
         end_t = datetime.combine(end_d, time(23, 59))
+        show_timeline = False # Protects PC load on big selections
     else:
-        target_o2_date = col3.date_input("Target Date", value=min_date, min_value=min_date, max_value=max_date, key="o2_date")
-        
+        target_o2_date = st.date_input("Target Date", value=min_date, min_value=min_date, max_value=max_date, key="o2_date")
         if preset_shift == "Shift A (22:00 - 06:00)":
             start_t = datetime.combine(target_o2_date - timedelta(days=1), time(22, 0))
             end_t = datetime.combine(target_o2_date, time(6, 0))
@@ -440,9 +446,7 @@ with tab4:
     col4, col5, col6 = st.columns([2, 2, 1])
     flow_col_sel = col4.selectbox("X-Axis (Flow Metric)", options=all_params, index=default_flow_idx, key="o2_x")
     o2_col_sel = col5.selectbox("Y-Axis (Oxygen/Secondary Metric)", options=all_params, index=default_o2_idx, key="o2_y")
-    
-    # Exclude shutdowns (flow < 1.0) so atmospheric O2 readings don't corrupt the statistics
-    op_threshold = col6.number_input("Active Boiler Threshold (Flow >)", value=1.0, step=0.5, help="Filters out shutdown periods from the stats table and scatterplot.")
+    op_threshold = col6.number_input("Active Boiler Threshold (Flow >)", value=1.0, step=0.5, help="Filters out shutdown periods from stats & scatterplot.")
     
     if target_boilers:
         fig_scat = go.Figure()
@@ -462,7 +466,6 @@ with tab4:
                     w_df_o2 = w_df_o2.dropna(subset=['Flow_Num', 'O2_Num'])
                     
                     if not w_df_o2.empty:
-                        # Drop periods where the boiler is off to prevent skewed Min/Max/Avg O2 calculations
                         stats_df_o2 = w_df_o2[w_df_o2['Flow_Num'] >= op_threshold]
                         
                         if not stats_df_o2.empty:
@@ -482,32 +485,31 @@ with tab4:
                                 f"Min {o2_col_sel}": 0.0, f"Avg {o2_col_sel}": 0.0, f"Max {o2_col_sel}": 0.0,
                             })
                         
-                        # Timeline retains ALL data so you can see shutdowns visually
-                        fig_line = make_subplots(specs=[[{"secondary_y": True}]])
-                        fig_line.add_trace(go.Scatter(
-                            x=w_df_o2['timestamp'], y=w_df_o2['Flow_Num'],
-                            name=f"{flow_col_sel}", line=dict(color=B_COLORS.get(b_name), width=2)
-                        ), secondary_y=False)
+                        if show_timeline:
+                            fig_line = make_subplots(specs=[[{"secondary_y": True}]])
+                            fig_line.add_trace(go.Scatter(
+                                x=w_df_o2['timestamp'], y=w_df_o2['Flow_Num'],
+                                name=f"{flow_col_sel}", line=dict(color=B_COLORS.get(b_name), width=2)
+                            ), secondary_y=False)
+                            fig_line.add_trace(go.Scatter(
+                                x=w_df_o2['timestamp'], y=w_df_o2['O2_Num'],
+                                name=f"{o2_col_sel}", line=dict(color=SEC_COLOR, width=2, dash='dot')
+                            ), secondary_y=True)
+                            
+                            fig_line.update_layout(
+                                title=f"{b_name} Breakdown: {flow_col_sel} (Solid) vs {o2_col_sel} (Dotted)", 
+                                template="plotly_white", hovermode="x unified", height=350, margin=dict(t=40, b=10)
+                            )
+                            fig_line.update_yaxes(title_text=flow_col_sel, secondary_y=False)
+                            fig_line.update_yaxes(title_text=o2_col_sel, secondary_y=True)
+                            line_charts.append(fig_line)
                         
-                        fig_line.add_trace(go.Scatter(
-                            x=w_df_o2['timestamp'], y=w_df_o2['O2_Num'],
-                            name=f"{o2_col_sel}", line=dict(color=SEC_COLOR, width=2, dash='dot')
-                        ), secondary_y=True)
-                        
-                        fig_line.update_layout(
-                            title=f"{b_name} Breakdown: {flow_col_sel} (Solid) vs {o2_col_sel} (Dotted)", 
-                            template="plotly_white", hovermode="x unified", height=350, margin=dict(t=40, b=10)
-                        )
-                        fig_line.update_yaxes(title_text=flow_col_sel, secondary_y=False)
-                        fig_line.update_yaxes(title_text=o2_col_sel, secondary_y=True)
-                        line_charts.append(fig_line)
-                        
-                        # Scatterplot uses filtered stats data so 21% O2 dots don't ruin the correlation view
-                        fig_scat.add_trace(go.Scatter(
+                        # WebGL Scatter for heavy data
+                        fig_scat.add_trace(go.Scattergl(
                             x=stats_df_o2['Flow_Num'], y=stats_df_o2['O2_Num'], mode='markers',
                             name=b_name,
                             marker=dict(color=B_COLORS.get(b_name), size=6, opacity=0.7),
-                            text=stats_df_o2['timestamp'].dt.strftime('%H:%M:%S'), hoverinfo="text+x+y+name"
+                            text=stats_df_o2['timestamp'].dt.strftime('%H:%M:%S \n%Y-%m-%d'), hoverinfo="text+x+y+name"
                         ))
         
         if stats_data:
@@ -515,9 +517,12 @@ with tab4:
             stats_df = pd.DataFrame(stats_data).set_index("Boiler")
             st.dataframe(stats_df.style.format("{:.2f}"), use_container_width=True)
             
-            st.markdown(f"#### Timeline Breakdowns")
-            for fig in line_charts:
-                st.plotly_chart(fig, use_container_width=True)
+            if show_timeline:
+                st.markdown(f"#### Timeline Breakdowns")
+                for fig in line_charts:
+                    st.plotly_chart(fig, use_container_width=True)
+            else:
+                st.info("💡 Timelines are intentionally hidden in 'Custom Date Range' mode to prevent browser crashing on massive datasets. Scroll down for Scatter Plot.")
             
             st.markdown("#### Scatter Correlation (Multi-Boiler)")
             fig_scat.update_layout(
