@@ -12,7 +12,7 @@ warnings.filterwarnings('ignore')
 st.set_page_config(page_title="Boiler Analytics Platform", layout="wide", initial_sidebar_state="expanded")
 
 # ==============================================================================
-# UI/UX: PREMIUM APPLE-STYLE SIDEBAR NAVIGATION CSS
+# UI/UX: PREMIUM APPLE-STYLE SIDEBAR NAVIGATION CSS (FIXED WIDTH & HIDDEN RADIOS)
 # ==============================================================================
 st.markdown("""
 <style>
@@ -21,53 +21,61 @@ st.markdown("""
     background-color: #fbfbfd;
 }
 
-/* Radio Group Container - Flush & Gapless */
-[data-testid="stSidebar"] [role="radiogroup"] {
-    gap: 0px !important;
+/* Radio Group Container */
+[data-testid="stSidebar"] div[role="radiogroup"] {
+    gap: 6px !important;
     background-color: #f5f5f7;
-    border-radius: 10px;
-    padding: 4px;
+    border-radius: 12px;
+    padding: 8px;
     border: 1px solid #d2d2d7;
     width: 100%;
+    display: flex;
+    flex-direction: column;
 }
 
-/* Base Tab Styling - Rectangular, Identical Width */
-[data-testid="stSidebar"] [role="radiogroup"] label {
-    padding: 12px 16px;
-    border-radius: 6px; /* Rectangular with strict, minimal softening */
+/* Force every option wrapper to take full width */
+[data-testid="stSidebar"] div[role="radiogroup"] > div {
+    width: 100% !important;
+}
+
+/* Base Tab Styling - Uniform Width & Centered */
+[data-testid="stSidebar"] div[role="radiogroup"] label {
+    padding: 12px 10px;
+    border-radius: 8px; /* Clean rectangular look */
     margin: 0px !important;
     background-color: transparent;
     border: 1px solid transparent;
-    transition: background-color 0.2s ease;
+    transition: all 0.2s ease;
     cursor: pointer;
-    display: flex;
-    align-items: center;
-    width: 100%;
+    width: 100% !important;
+    display: flex !important;
+    justify-content: center !important;
+    align-items: center !important;
 }
 
-/* Hover State for Inactive Tabs */
-[data-testid="stSidebar"] [role="radiogroup"] label:hover {
-    background-color: rgba(0, 0, 0, 0.04);
+/* Hover State */
+[data-testid="stSidebar"] div[role="radiogroup"] label:hover {
+    background-color: #e8e8ed;
 }
 
-/* Active State Styling - Apple Blue (#0071e3) */
-[data-testid="stSidebar"] [role="radiogroup"] label[data-checked="true"],
-[data-testid="stSidebar"] [role="radiogroup"] label:has(input:checked) {
+/* Active State Styling - Refined Professional Blue */
+[data-testid="stSidebar"] div[role="radiogroup"] label[data-checked="true"],
+[data-testid="stSidebar"] div[role="radiogroup"] label:has(input:checked) {
     background-color: #0071e3 !important;
-    border: 1px solid #0071e3 !important;
-    box-shadow: 0 2px 8px rgba(0, 113, 227, 0.25);
+    border-color: #0071e3 !important;
+    box-shadow: 0 2px 6px rgba(0, 113, 227, 0.3);
     position: relative;
     overflow: hidden;
 }
 
-/* Subtle White Light-Sweep Animation on Active Tab */
-[data-testid="stSidebar"] [role="radiogroup"] label[data-checked="true"]::before,
-[data-testid="stSidebar"] [role="radiogroup"] label:has(input:checked)::before {
+/* Subtle White Light-Sweep Animation */
+[data-testid="stSidebar"] div[role="radiogroup"] label[data-checked="true"]::before,
+[data-testid="stSidebar"] div[role="radiogroup"] label:has(input:checked)::before {
     content: '';
     position: absolute;
     top: 0; left: -100%;
     width: 50%; height: 100%;
-    background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.35), transparent);
+    background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.25), transparent);
     animation: light-sweep 3s infinite cubic-bezier(0.4, 0, 0.2, 1);
     z-index: 1;
     pointer-events: none;
@@ -80,34 +88,36 @@ st.markdown("""
 }
 
 /* Text Formatting */
-[data-testid="stSidebar"] [role="radiogroup"] label p {
+[data-testid="stSidebar"] div[role="radiogroup"] label p {
     margin: 0 !important;
     font-size: 14.5px;
     color: #1d1d1f; 
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-    text-align: left;
-    width: 100%;
+    font-weight: 500;
+    z-index: 2; 
     position: relative;
-    z-index: 2; /* Keeps text layered above the animation */
+    text-align: center !important;
+    width: 100%;
+    white-space: normal;
 }
 
 /* Active Text Color */
-[data-testid="stSidebar"] [role="radiogroup"] label[data-checked="true"] p,
-[data-testid="stSidebar"] [role="radiogroup"] label:has(input:checked) p {
+[data-testid="stSidebar"] div[role="radiogroup"] label[data-checked="true"] p,
+[data-testid="stSidebar"] div[role="radiogroup"] label:has(input:checked) p {
     color: #ffffff !important;
     font-weight: 600;
-    letter-spacing: 0.2px;
 }
 
-/* Completely hide the old circular radio widget */
-[data-testid="stSidebar"] [role="radiogroup"] label > div:first-child {
+/* FORCE HIDE the baseweb radio circle widget */
+[data-testid="stSidebar"] div[role="radiogroup"] div[data-baseweb="radio"] {
     display: none !important;
 }
 
-/* Ensure container stretches to limits */
-[data-testid="stSidebar"] [role="radiogroup"] label div[data-testid="stMarkdownContainer"] {
+/* Ensure the markdown container expands fully to center text */
+[data-testid="stSidebar"] div[role="radiogroup"] div[data-testid="stMarkdownContainer"] {
     display: flex !important;
-    width: 100%;
+    justify-content: center !important;
+    align-items: center !important;
+    width: 100% !important;
 }
 </style>
 """, unsafe_allow_html=True)
@@ -323,7 +333,6 @@ if all_params:
 # ==============================================================================
 # SEAMLESS VERTICAL SIDEBAR NAVIGATION
 # ==============================================================================
-# Using label_visibility="collapsed" removes the title text above the tabs for a cleaner look
 app_mode = st.sidebar.radio("Navigation", [
     "Boiler operation and Flow",
     "Loading pattern",
