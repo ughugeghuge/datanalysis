@@ -426,9 +426,9 @@ with tab4:
     o2_col_sel = col5.selectbox("Y-Axis (Oxygen/Secondary Metric)", options=all_params, index=default_o2_idx, key="o2_y")
     
     if target_boilers:
+        fig_o2_time = make_subplots(specs=[[{"secondary_y": True}]])
         fig_scat = go.Figure()
         stats_data = []
-        line_charts = []
         
         for b_name in target_boilers:
             if b_name in cache:
@@ -443,47 +443,26 @@ with tab4:
                     w_df_o2 = w_df_o2.dropna(subset=['Flow_Num', 'O2_Num'])
                     
                     if not w_df_o2.empty:
-                        # Drop periods where the boiler is off (Flow <= 0.05) to prevent skewed Min/Max/Avg calculations
-                        stats_df_o2 = w_df_o2[w_df_o2['Flow_Num'] > 0.05]
+                        stats_data.append({
+                            "Boiler": b_name,
+                            f"Min {flow_col_sel}": w_df_o2['Flow_Num'].min(),
+                            f"Avg {flow_col_sel}": w_df_o2['Flow_Num'].mean(),
+                            f"Max {flow_col_sel}": w_df_o2['Flow_Num'].max(),
+                            f"Min {o2_col_sel}": w_df_o2['O2_Num'].min(),
+                            f"Avg {o2_col_sel}": w_df_o2['O2_Num'].mean(),
+                            f"Max {o2_col_sel}": w_df_o2['O2_Num'].max(),
+                        })
                         
-                        if not stats_df_o2.empty:
-                            stats_data.append({
-                                "Boiler": b_name,
-                                f"Min {flow_col_sel}": stats_df_o2['Flow_Num'].min(),
-                                f"Avg {flow_col_sel}": stats_df_o2['Flow_Num'].mean(),
-                                f"Max {flow_col_sel}": stats_df_o2['Flow_Num'].max(),
-                                f"Min {o2_col_sel}": stats_df_o2['O2_Num'].min(),
-                                f"Avg {o2_col_sel}": stats_df_o2['O2_Num'].mean(),
-                                f"Max {o2_col_sel}": stats_df_o2['O2_Num'].max(),
-                            })
-                        else:
-                            stats_data.append({
-                                "Boiler": b_name,
-                                f"Min {flow_col_sel}": 0.0, f"Avg {flow_col_sel}": 0.0, f"Max {flow_col_sel}": 0.0,
-                                f"Min {o2_col_sel}": 0.0, f"Avg {o2_col_sel}": 0.0, f"Max {o2_col_sel}": 0.0,
-                            })
-                        
-                        # Store individual line graphs for vertical stacking
-                        fig_line = make_subplots(specs=[[{"secondary_y": True}]])
-                        fig_line.add_trace(go.Scatter(
+                        fig_o2_time.add_trace(go.Scatter(
                             x=w_df_o2['timestamp'], y=w_df_o2['Flow_Num'],
-                            name=f"{flow_col_sel}", line=dict(color=B_COLORS.get(b_name), width=2)
+                            name=f"{b_name} {flow_col_sel}", line=dict(color=B_COLORS.get(b_name), width=2)
                         ), secondary_y=False)
                         
-                        fig_line.add_trace(go.Scatter(
+                        fig_o2_time.add_trace(go.Scatter(
                             x=w_df_o2['timestamp'], y=w_df_o2['O2_Num'],
-                            name=f"{o2_col_sel}", line=dict(color=SEC_COLOR, width=2, dash='dot')
+                            name=f"{b_name} {o2_col_sel}", line=dict(color=B_COLORS.get(b_name), width=2, dash='dot')
                         ), secondary_y=True)
                         
-                        fig_line.update_layout(
-                            title=f"{b_name} Breakdown: {flow_col_sel} (Solid) vs {o2_col_sel} (Dotted)", 
-                            template="plotly_white", hovermode="x unified", height=350, margin=dict(t=40, b=10)
-                        )
-                        fig_line.update_yaxes(title_text=flow_col_sel, secondary_y=False)
-                        fig_line.update_yaxes(title_text=o2_col_sel, secondary_y=True)
-                        line_charts.append(fig_line)
-                        
-                        # Add to the combined Scatterplot
                         fig_scat.add_trace(go.Scatter(
                             x=w_df_o2['Flow_Num'], y=w_df_o2['O2_Num'], mode='markers',
                             name=b_name,
@@ -492,13 +471,15 @@ with tab4:
                         ))
         
         if stats_data:
-            st.markdown("#### Period Statistics Summary (Active Operating Flow Only)")
+            st.markdown("#### Period Statistics Summary")
             stats_df = pd.DataFrame(stats_data).set_index("Boiler")
             st.dataframe(stats_df.style.format("{:.2f}"), use_container_width=True)
             
-            st.markdown(f"#### Timeline Breakdowns")
-            for fig in line_charts:
-                st.plotly_chart(fig, use_container_width=True)
+            st.markdown(f"#### Combined Timeline: {flow_col_sel} (Solid) vs {o2_col_sel} (Dotted)")
+            fig_o2_time.update_layout(template="plotly_white", hovermode="x unified", height=450, margin=dict(t=10, b=10))
+            fig_o2_time.update_yaxes(title_text=flow_col_sel, secondary_y=False)
+            fig_o2_time.update_yaxes(title_text=o2_col_sel, secondary_y=True)
+            st.plotly_chart(fig_o2_time, use_container_width=True)
             
             st.markdown("#### Scatter Correlation (Multi-Boiler)")
             fig_scat.update_layout(
