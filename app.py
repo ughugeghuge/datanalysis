@@ -202,9 +202,9 @@ if cache_data_result[0] is None:
     
 cache, all_params, (min_date, max_date) = cache_data_result
 
-st.sidebar.markdown("### Global Parameters")[cite: 13]
+st.sidebar.markdown("### Global Parameters")
 
-# Robust default selection logic[cite: 13]
+# Robust default selection logic
 default_flow_idx = 0
 default_press_idx = 1
 default_o2_idx = 0
