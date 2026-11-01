@@ -6,8 +6,6 @@ from datetime import timedelta, datetime, time
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 from pathlib import Path
-import os
-import shutil
 import warnings
 warnings.filterwarnings('ignore')
 
@@ -18,36 +16,46 @@ st.set_page_config(page_title="Boiler Analytics Platform", layout="wide", initia
 # ==============================================================================
 st.markdown("""
 <style>
-div[data-testid="stSidebar"] div[data-testid="stRadio"] > div {
-    gap: 0.6rem;
+/* Target the radio group specifically in the sidebar */
+[data-testid="stSidebar"] [role="radiogroup"] {
+    gap: 0.8rem;
 }
-div[data-testid="stSidebar"] div[data-testid="stRadio"] > div > label {
-    padding: 12px 16px;
-    border-radius: 20px; /* Fully rounded pill shape */
-    background-color: #f8f9fa;
-    border: 1px solid #e9ecef;
-    transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
+[data-testid="stSidebar"] [role="radiogroup"] label {
+    padding: 10px 15px;
+    border-radius: 25px; /* Fully rounded pill shape */
+    background-color: #f1f5f9;
+    border: 1px solid #e2e8f0;
+    transition: all 0.3s ease;
     cursor: pointer;
-    text-align: center;
+    display: flex;
     justify-content: center;
+    align-items: center;
 }
-div[data-testid="stSidebar"] div[data-testid="stRadio"] > div > label:hover {
-    background-color: #e9ecef;
+[data-testid="stSidebar"] [role="radiogroup"] label:hover {
+    background-color: #e2e8f0;
     transform: translateY(-2px);
 }
-div[data-testid="stSidebar"] div[data-testid="stRadio"] > div > label:has(input:checked) {
-    background-color: #1a202c; /* Deep slate color for active state */
-    border-color: #1a202c;
+/* Active State Styling */
+[data-testid="stSidebar"] [role="radiogroup"] label[data-checked="true"],
+[data-testid="stSidebar"] [role="radiogroup"] label:has(input:checked) {
+    background-color: #1f77b4 !important;
+    border-color: #1f77b4 !important;
     transform: scale(1.02);
-    box-shadow: 0 4px 12px rgba(26, 32, 44, 0.2);
+    box-shadow: 0 4px 10px rgba(31, 119, 180, 0.3);
 }
-div[data-testid="stSidebar"] div[data-testid="stRadio"] > div > label:has(input:checked) div[data-testid="stMarkdownContainer"] p {
+[data-testid="stSidebar"] [role="radiogroup"] label[data-checked="true"] p,
+[data-testid="stSidebar"] [role="radiogroup"] label:has(input:checked) p {
     color: white !important;
     font-weight: 600;
 }
-/* Completely hide the radio circle */
-div[data-testid="stSidebar"] div[data-testid="stRadio"] > div > label div[data-baseweb="radio"] {
+/* Completely hide the radio circle widget */
+[data-testid="stSidebar"] [role="radiogroup"] label div[class*="st-"] {
     display: none;
+}
+[data-testid="stSidebar"] [role="radiogroup"] label div[data-testid="stMarkdownContainer"] {
+    display: block !important;
+    width: 100%;
+    text-align: center;
 }
 </style>
 """, unsafe_allow_html=True)
@@ -230,7 +238,6 @@ def calculate_window_generation(cache, target_boilers, start_time, end_time, pri
     return totals
 
 def set_legend_bottom(fig):
-    """Helper to force all legends to bottom center for consistency."""
     fig.update_layout(
         legend=dict(
             orientation="h",
@@ -243,7 +250,7 @@ def set_legend_bottom(fig):
     return fig
 
 # ==============================================================================
-# INITIALIZATION & FILE UPLOADER
+# INITIALIZATION 
 # ==============================================================================
 cache_data_result = process_local_files('./boiler_data')
 cache, all_params, dates_tuple = cache_data_result if cache_data_result[0] is not None else ({}, [], (datetime.now().date(), datetime.now().date()))
@@ -252,16 +259,17 @@ min_date, max_date = dates_tuple
 default_flow_idx = 0
 default_press_idx = 1
 default_o2_idx = 0
-for i, p in enumerate(all_params):
-    p_lower = p.lower()
-    if p_lower == 'steam flow meter': default_flow_idx = i
-    elif ('steam flow' in p_lower or 'flow meter' in p_lower) and all_params[default_flow_idx].lower() != 'steam flow meter': default_flow_idx = i
-    if p_lower == 'boiler pressure': default_press_idx = i
-    elif ('boiler pressure' in p_lower or 'steam pressure' in p_lower) and all_params[default_press_idx].lower() != 'boiler pressure': default_press_idx = i
-    if 'oxygen' in p_lower or 'o2' in p_lower: default_o2_idx = i
+if all_params:
+    for i, p in enumerate(all_params):
+        p_lower = p.lower()
+        if p_lower == 'steam flow meter': default_flow_idx = i
+        elif ('steam flow' in p_lower or 'flow meter' in p_lower) and all_params[default_flow_idx].lower() != 'steam flow meter': default_flow_idx = i
+        if p_lower == 'boiler pressure': default_press_idx = i
+        elif ('boiler pressure' in p_lower or 'steam pressure' in p_lower) and all_params[default_press_idx].lower() != 'boiler pressure': default_press_idx = i
+        if 'oxygen' in p_lower or 'o2' in p_lower: default_o2_idx = i
 
 # ==============================================================================
-# VERTICAL SIDEBAR NAVIGATION
+# VERTICAL SIDEBAR NAVIGATION & DATA MANAGEMENT
 # ==============================================================================
 st.sidebar.title("🏭 Navigation")
 app_mode = st.sidebar.radio("Select View:", [
@@ -269,47 +277,37 @@ app_mode = st.sidebar.radio("Select View:", [
     "Loading pattern",
     "Steam flow vs oxygen variation",
     "System Cross-Analysis",
-    "Parameter Correlation Matrix",
-    "Data Management"
+    "Parameter Correlation Matrix"
 ])
 
-# ==============================================================================
-# DATA MANAGEMENT TAB (FOR UPLOADING NEW FILES)
-# ==============================================================================
-if app_mode == "Data Management":
-    st.title("Data Management")
-    st.markdown("Upload new files here to append/overwrite data for specific boilers without losing your other data.")
-    
-    uploaded_files = st.file_uploader("Upload Boiler Files (.xlsx, .xls, .csv)", accept_multiple_files=True)
-    if uploaded_files:
-        if st.button("Process & Save Uploaded Files"):
-            data_dir = Path('./boiler_data')
-            data_dir.mkdir(parents=True, exist_ok=True)
-            for f in uploaded_files:
-                target_path = data_dir / f.name
-                with open(target_path, "wb") as out_file:
-                    out_file.write(f.getbuffer())
-                st.success(f"Saved {f.name} to persistent storage.")
-            st.cache_data.clear() # Force app to reload new data
-            st.rerun()
-            
-    st.markdown("### Currently Stored Files")
-    data_dir = Path('./boiler_data')
-    if data_dir.exists():
-        files = list(data_dir.glob('*.*'))
-        if files:
-            for f in files: st.markdown(f"- `{f.name}`")
-        else:
-            st.info("No files currently stored.")
+st.sidebar.markdown("---")
+st.sidebar.markdown("### Upload Boiler Data")
+b1_file = st.sidebar.file_uploader("Boiler 1", accept_multiple_files=False, key="up_b1", label_visibility="visible")
+b2_file = st.sidebar.file_uploader("Boiler 2", accept_multiple_files=False, key="up_b2", label_visibility="visible")
+b3_file = st.sidebar.file_uploader("Boiler 3", accept_multiple_files=False, key="up_b3", label_visibility="visible")
 
-elif not cache:
-    st.warning("No valid data found. Please go to the 'Data Management' tab and upload your boiler files.")
+if st.sidebar.button("Process & Save Uploads"):
+    data_dir = Path('./boiler_data')
+    data_dir.mkdir(parents=True, exist_ok=True)
+    
+    if b1_file:
+        with open(data_dir / f"Boiler1_{b1_file.name}", "wb") as f: f.write(b1_file.getbuffer())
+    if b2_file:
+        with open(data_dir / f"Boiler2_{b2_file.name}", "wb") as f: f.write(b2_file.getbuffer())
+    if b3_file:
+        with open(data_dir / f"Boiler3_{b3_file.name}", "wb") as f: f.write(b3_file.getbuffer())
+        
+    st.cache_data.clear()
+    st.rerun()
+
+if not cache:
+    st.warning("No valid data found. Please use the sidebar to upload files for Boiler 1, 2, or 3.")
     st.stop()
 
 # ==============================================================================
 # 1. BOILER OPERATION AND FLOW
 # ==============================================================================
-elif app_mode == "Boiler operation and Flow":
+if app_mode == "Boiler operation and Flow":
     st.title("Boiler Operation and Flow")
     
     with st.expander("Event Parameters", expanded=True):
@@ -460,7 +458,6 @@ elif app_mode == "Loading pattern":
         start_dt = datetime.combine(explore_date, time_range[0])
         end_dt = datetime.combine(explore_date, time_range[1])
         
-        # Plot 1: Combined Primary Metric Line Chart
         fig_exp = go.Figure()
         for b_name in target_boilers:
             if b_name not in cache: continue
@@ -480,7 +477,6 @@ elif app_mode == "Loading pattern":
 
         st.markdown("---")
         st.markdown("### Steam Flow vs Boiler Pressure Analysis")
-        # Plot 2: Individual Dual Axis Overlays
         for b_name in target_boilers:
             if b_name not in cache: continue
             b_df = cache[b_name]
@@ -565,7 +561,6 @@ elif app_mode == "Steam flow vs oxygen variation":
         
         stats_data = []
         line_charts = []
-        
         pooled_flow = []
         pooled_o2 = []
         
@@ -623,13 +618,7 @@ elif app_mode == "Steam flow vs oxygen variation":
                                 x=w_df_o2['timestamp'], y=w_df_o2['O2_Num'],
                                 name=f"{o2_col_sel}", line=dict(color=SEC_COLOR, width=2, dash='dot')
                             ), secondary_y=True)
-                            
-                            fig_line.update_layout(
-                                title=f"{b_name} Breakdown | Date: {start_t.date()}", 
-                                template="plotly_white", hovermode="x unified", height=350, margin=dict(t=40, b=50)
-                            )
-                            fig_line.update_yaxes(title_text=flow_col_sel, secondary_y=False)
-                            fig_line.update_yaxes(title_text=o2_col_sel, secondary_y=True)
+                            fig_line.update_layout(title=f"{b_name} Breakdown | Date: {start_t.date()}", template="plotly_white", hovermode="x unified", height=300, margin=dict(t=40, b=50))
                             fig_line = set_legend_bottom(fig_line)
                             line_charts.append(fig_line)
                         
@@ -643,7 +632,6 @@ elif app_mode == "Steam flow vs oxygen variation":
             st.markdown("#### Period Statistics Summary (Active Operating Flow Only)")
             st.dataframe(pd.DataFrame(stats_data).set_index("Boiler").style.format("{:.2f}"), use_container_width=True)
             
-            # Reordered layout
             if show_timeline:
                 st.markdown("#### Timeline Breakdowns")
                 for fig in line_charts:
@@ -652,10 +640,7 @@ elif app_mode == "Steam flow vs oxygen variation":
                 st.info("💡 Timelines are intentionally hidden in 'Custom Date Range' to prevent browser lag. Scroll down for aggregated plots.")
             
             st.markdown("#### 2D Scatter Correlation")
-            fig_scat.update_layout(
-                title=f"Date: {start_t.date()}", xaxis_title=flow_col_sel, yaxis_title=o2_col_sel, 
-                template="plotly_white", height=450, margin=dict(t=40, b=50)
-            )
+            fig_scat.update_layout(title=f"Date: {start_t.date()}", xaxis_title=flow_col_sel, yaxis_title=o2_col_sel, template="plotly_white", height=450, margin=dict(t=40, b=50))
             fig_scat = set_legend_bottom(fig_scat)
             st.plotly_chart(fig_scat, use_container_width=True)
             
@@ -674,13 +659,9 @@ elif app_mode == "Steam flow vs oxygen variation":
                 st.markdown("#### 3D Bivariate Density Map (Flow vs Oxygen)")
                 H, xedges, yedges = np.histogram2d(pooled_flow, pooled_o2, bins=30, density=True)
                 fig_3d.add_trace(go.Surface(z=H.T, x=xedges[:-1], y=yedges[:-1], colorscale='Viridis', opacity=0.9))
-                
                 fig_3d.update_layout(
                     title=f"Date: {start_t.date()}",
-                    scene=dict(
-                        xaxis_title="Steam Flow", yaxis_title="Oxygen", zaxis_title="Probability Density",
-                        camera=dict(eye=dict(x=1.5, y=-1.5, z=1.2))
-                    ),
+                    scene=dict(xaxis_title="Steam Flow", yaxis_title="Oxygen", zaxis_title="Probability Density", camera=dict(eye=dict(x=1.5, y=-1.5, z=1.2))),
                     height=600, margin=dict(t=40, b=50)
                 )
                 st.plotly_chart(fig_3d, use_container_width=True, config={'scrollZoom': False})
@@ -688,11 +669,11 @@ elif app_mode == "Steam flow vs oxygen variation":
             st.warning("No valid overlapping data points found.")
 
 # ==============================================================================
-# 5. SYSTEM CROSS-ANALYSIS (NEW)
+# 4. SYSTEM CROSS-ANALYSIS (DYNAMIC)
 # ==============================================================================
 elif app_mode == "System Cross-Analysis":
     st.title("System Cross-Analysis")
-    st.markdown("Discover deeper insights into operational efficiency and hidden mechanical issues by cross-evaluating multiple parameters.")
+    st.markdown("Select any two parameters across the boiler system to discover deep mechanical and operational correlations.")
     
     with st.expander("Analysis Configuration", expanded=True):
         col1, col2 = st.columns([1, 1.5])
@@ -719,6 +700,10 @@ elif app_mode == "System Cross-Analysis":
             start_t = datetime.combine(target_crs_date, time(0, 0))
             end_t = datetime.combine(target_crs_date, time(23, 59))
 
+        col3, col4 = st.columns(2)
+        cross_p1 = col3.selectbox("Primary Metric (Y1)", options=all_params, index=default_flow_idx, key="crs_p1")
+        cross_p2 = col4.selectbox("Secondary Metric (Y2)", options=all_params, index=default_press_idx, key="crs_p2")
+
     if not target_boilers:
         st.stop()
 
@@ -728,36 +713,22 @@ elif app_mode == "System Cross-Analysis":
             w_df = b_df[(b_df['timestamp'] >= start_t) & (b_df['timestamp'] <= end_t)].copy()
             
             if not w_df.empty:
-                # 1. Thermal Efficiency proxy: Flow vs Eco Outlet Temp
-                flow_col = find_matching_param(w_df.columns, 'steam flow meter')
-                eco_out_col = find_matching_param(w_df.columns, 'eco outlet temp')
+                col_y1 = find_matching_param(w_df.columns, cross_p1)
+                col_y2 = find_matching_param(w_df.columns, cross_p2)
                 
-                if flow_col and eco_out_col:
-                    st.markdown(f"#### {target_boiler}: Thermal Efficiency Proxy (Flow vs Eco Outlet Temp)")
-                    st.info("High Eco Outlet Temps at lower flows can indicate poor heat transfer (sooting/scaling) in the economizer.")
+                if col_y1 and col_y2:
+                    st.markdown(f"#### {target_boiler}: {col_y1} vs {col_y2}")
                     fig_eff = make_subplots(specs=[[{"secondary_y": True}]])
-                    fig_eff.add_trace(go.Scatter(x=w_df['timestamp'], y=pd.to_numeric(w_df[flow_col], errors='coerce'), name=flow_col, line=dict(color=B_COLORS.get(target_boiler))), secondary_y=False)
-                    fig_eff.add_trace(go.Scatter(x=w_df['timestamp'], y=pd.to_numeric(w_df[eco_out_col], errors='coerce'), name=eco_out_col, line=dict(color='#d62728', dash='dot')), secondary_y=True)
-                    fig_eff.update_layout(template="plotly_white", hovermode="x unified", height=350, margin=dict(t=10, b=50))
+                    fig_eff.add_trace(go.Scatter(x=w_df['timestamp'], y=pd.to_numeric(w_df[col_y1], errors='coerce'), name=col_y1, line=dict(color=B_COLORS.get(target_boiler))), secondary_y=False)
+                    fig_eff.add_trace(go.Scatter(x=w_df['timestamp'], y=pd.to_numeric(w_df[col_y2], errors='coerce'), name=col_y2, line=dict(color='#d62728', dash='dot')), secondary_y=True)
+                    fig_eff.update_layout(template="plotly_white", hovermode="x unified", height=400, margin=dict(t=10, b=50))
                     fig_eff = set_legend_bottom(fig_eff)
                     st.plotly_chart(fig_eff, use_container_width=True)
-
-                # 2. Feedwater Stability: Flow vs Deaerator Temp
-                da_temp_col = find_matching_param(w_df.columns, 'deaerator temperature')
-                if flow_col and da_temp_col:
-                    st.markdown(f"#### {target_boiler}: Feedwater Stability (Flow vs Deaerator Temp)")
-                    st.info("Sudden drops in Deaerator Temperature during flow spikes indicate cold makeup water shocking the system, reducing efficiency.")
-                    fig_da = make_subplots(specs=[[{"secondary_y": True}]])
-                    fig_da.add_trace(go.Scatter(x=w_df['timestamp'], y=pd.to_numeric(w_df[flow_col], errors='coerce'), name=flow_col, line=dict(color=B_COLORS.get(target_boiler))), secondary_y=False)
-                    fig_da.add_trace(go.Scatter(x=w_df['timestamp'], y=pd.to_numeric(w_df[da_temp_col], errors='coerce'), name=da_temp_col, line=dict(color='#9467bd', dash='dot')), secondary_y=True)
-                    fig_da.update_layout(template="plotly_white", hovermode="x unified", height=350, margin=dict(t=10, b=50))
-                    fig_da = set_legend_bottom(fig_da)
-                    st.plotly_chart(fig_da, use_container_width=True)
                     
             st.markdown("---")
 
 # ==============================================================================
-# 6. PARAMETER CORRELATION MATRIX
+# 5. PARAMETER CORRELATION MATRIX
 # ==============================================================================
 elif app_mode == "Parameter Correlation Matrix":
     st.title("Parameter Correlation Matrix")
