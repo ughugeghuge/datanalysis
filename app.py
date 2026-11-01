@@ -12,7 +12,7 @@ warnings.filterwarnings('ignore')
 st.set_page_config(page_title="Boiler Analytics Platform", layout="wide", initial_sidebar_state="expanded")
 
 # ==============================================================================
-# UI/UX: PREMIUM APPLE-STYLE SIDEBAR NAVIGATION CSS (LEFT-ALIGNED & GAPLESS)
+# UI/UX: PREMIUM APPLE-STYLE SIDEBAR NAVIGATION CSS
 # ==============================================================================
 st.markdown("""
 <style>
@@ -21,52 +21,107 @@ st.markdown("""
     background-color: #fbfbfd;
 }
 
-/* Radio Group Container */
+/* Radio Group Container - Flush & Gapless */
 [data-testid="stSidebar"] div[role="radiogroup"] {
-    gap: 4px !important;
-    width: 100%;
-    display: flex;
-    flex-direction: column;
-}
-
-/* Base Tab Styling - Uniform Width & Left Aligned */
-[data-testid="stSidebar"] div[role="radiogroup"] label {
-    padding: 12px 16px !important;
-    border-radius: 8px !important; 
-    margin: 0px !important;
-    background-color: transparent !important;
-    border: 1px solid transparent !important;
-    transition: all 0.2s ease;
-    cursor: pointer;
-    width: 100% !important;
+    gap: 0px !important; /* Forces zero gap between items */
     display: flex !important;
-    justify-content: flex-start !important; /* Forces left alignment */
+    flex-direction: column !important;
+    width: 100% !important;
+    padding: 0px !important;
+}
+
+/* Wrapper for each option */
+[data-testid="stSidebar"] div[role="radiogroup"] > div {
+    width: 100% !important;
+    margin: 0px !important;
+    padding: 0px !important;
+}
+
+/* Base Tab Styling - Uniform Full Width, Left Aligned, Gapless Rectangles */
+[data-testid="stSidebar"] div[role="radiogroup"] label {
+    width: 100% !important;
+    padding: 14px 16px !important;
+    margin: 0px !important;
+    border-radius: 0px !important; /* Flat edges for seamless stack */
+    background-color: transparent !important;
+    border: none !important;
+    cursor: pointer;
+    display: flex !important;
     align-items: center !important;
+    justify-content: flex-start !important;
+    transition: background-color 0.2s ease;
 }
 
-/* Hover State */
+/* Add slight rounding to the top of the first item and bottom of the second-to-last */
+[data-testid="stSidebar"] div[role="radiogroup"] > div:first-child label {
+    border-top-left-radius: 8px !important;
+    border-top-right-radius: 8px !important;
+}
+[data-testid="stSidebar"] div[role="radiogroup"] > div:nth-last-child(2) label {
+    border-bottom-left-radius: 8px !important;
+    border-bottom-right-radius: 8px !important;
+}
+
+/* Completely and forcefully hide the radio circle */
+[data-testid="stSidebar"] div[role="radiogroup"] label > div:first-child,
+[data-testid="stSidebar"] div[role="radiogroup"] label div[data-baseweb="radio"] {
+    display: none !important;
+    width: 0px !important;
+    height: 0px !important;
+    margin: 0px !important;
+    padding: 0px !important;
+    opacity: 0 !important;
+    visibility: hidden !important;
+}
+
+/* Text Container Alignment */
+[data-testid="stSidebar"] div[role="radiogroup"] label div[data-testid="stMarkdownContainer"] {
+    display: flex !important;
+    width: 100% !important;
+    justify-content: flex-start !important;
+}
+
+/* Text Styling */
+[data-testid="stSidebar"] div[role="radiogroup"] label p {
+    margin: 0 !important;
+    font-size: 14.5px !important;
+    color: #1d1d1f !important;
+    font-weight: 500 !important;
+    text-align: left !important;
+    width: 100% !important;
+    position: relative;
+    z-index: 2;
+}
+
+/* Hover State for Inactive Tabs */
 [data-testid="stSidebar"] div[role="radiogroup"] label:hover {
-    background-color: #e8e8ed !important;
+    background-color: #f0f0f5 !important;
 }
 
-/* Active State Styling - Refined Professional Blue */
+/* Active Selected State - Apple Blue */
 [data-testid="stSidebar"] div[role="radiogroup"] label[data-checked="true"],
 [data-testid="stSidebar"] div[role="radiogroup"] label:has(input:checked) {
     background-color: #0071e3 !important;
-    border-color: #0071e3 !important;
-    box-shadow: 0 2px 6px rgba(0, 113, 227, 0.3) !important;
     position: relative;
     overflow: hidden;
 }
 
-/* Subtle White Light-Sweep Animation */
+/* Active Text Color */
+[data-testid="stSidebar"] div[role="radiogroup"] label[data-checked="true"] p,
+[data-testid="stSidebar"] div[role="radiogroup"] label:has(input:checked) p {
+    color: #ffffff !important;
+    font-weight: 600 !important;
+    letter-spacing: 0.2px;
+}
+
+/* Light Sweep Animation on Active Tab */
 [data-testid="stSidebar"] div[role="radiogroup"] label[data-checked="true"]::before,
 [data-testid="stSidebar"] div[role="radiogroup"] label:has(input:checked)::before {
     content: '';
     position: absolute;
     top: 0; left: -100%;
     width: 50%; height: 100%;
-    background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.25), transparent);
+    background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.3), transparent);
     animation: light-sweep 3s infinite cubic-bezier(0.4, 0, 0.2, 1);
     z-index: 1;
     pointer-events: none;
@@ -78,44 +133,22 @@ st.markdown("""
     100% { left: 200%; }
 }
 
-/* Text Formatting */
-[data-testid="stSidebar"] div[role="radiogroup"] label p {
-    margin: 0 !important;
-    font-size: 14.5px;
-    color: #1d1d1f; 
-    font-weight: 500;
-    z-index: 2; 
-    position: relative;
-    text-align: left !important;
-    width: 100%;
-}
-
-/* Active Text Color */
-[data-testid="stSidebar"] div[role="radiogroup"] label[data-checked="true"] p,
-[data-testid="stSidebar"] div[role="radiogroup"] label:has(input:checked) p {
-    color: #ffffff !important;
-    font-weight: 600;
-}
-
-/* FORCE HIDE THE CIRCULAR RADIO WIDGET */
-[data-testid="stSidebar"] div[role="radiogroup"] label > div:first-child {
-    display: none !important;
-    width: 0px !important;
-    margin: 0px !important;
-    padding: 0px !important;
-}
-
-/* Align Markdown Container strictly to the left edge */
-[data-testid="stSidebar"] div[role="radiogroup"] label div[data-testid="stMarkdownContainer"] {
-    display: flex !important;
-    justify-content: flex-start !important;
-    width: 100% !important;
-}
-
-/* Push the 'Data Management' tab down to create space */
-[data-testid="stSidebar"] div[role="radiogroup"] label:last-child {
+/* Data Management Tab - Push to bottom and separate */
+[data-testid="stSidebar"] div[role="radiogroup"] > div:last-child {
     margin-top: 60px !important;
+}
+[data-testid="stSidebar"] div[role="radiogroup"] > div:last-child label {
+    border-radius: 8px !important;
     border: 1px solid #d2d2d7 !important;
+    background-color: #f5f5f7 !important;
+}
+[data-testid="stSidebar"] div[role="radiogroup"] > div:last-child label:hover {
+    background-color: #e8e8ed !important;
+}
+[data-testid="stSidebar"] div[role="radiogroup"] > div:last-child label[data-checked="true"],
+[data-testid="stSidebar"] div[role="radiogroup"] > div:last-child label:has(input:checked) {
+    background-color: #0071e3 !important;
+    border: 1px solid #0071e3 !important;
 }
 </style>
 """, unsafe_allow_html=True)
