@@ -12,7 +12,7 @@ warnings.filterwarnings('ignore')
 st.set_page_config(page_title="Boiler Analytics Platform", layout="wide", initial_sidebar_state="expanded")
 
 # ==============================================================================
-# UI/UX: PREMIUM APPLE-STYLE SIDEBAR NAVIGATION CSS
+# UI/UX: PREMIUM APPLE-STYLE SIDEBAR NAVIGATION CSS 
 # ==============================================================================
 st.markdown("""
 <style>
@@ -349,7 +349,6 @@ elif app_mode == "Boiler operation and Flow":
                     fig_sum = go.Figure()
                     fig_sum.add_trace(go.Scatter(x=sum_df.index, y=sum_df['Aggregate'], mode='lines', fill='tozeroy', name="Overall Sum", line=dict(color=SUM_LINE, width=2), fillcolor=SUM_FILL))
                     
-                    # Scan for overlapping zero-flow events across ALL selected boilers to highlight on the summary chart
                     overlapping_events = events_df[events_df['boiler'].isin(target_boilers) & (events_df['start_time'] <= ev['window_end']) & (events_df['end_time'] >= ev['window_start'])]
                     for _, b_ev in overlapping_events.iterrows():
                         fig_sum.add_vrect(x0=b_ev['start_time'], x1=b_ev['end_time'], fillcolor="rgba(220, 38, 38, 0.15)", line_width=0)
@@ -373,7 +372,6 @@ elif app_mode == "Boiler operation and Flow":
                                 m2 = find_matching_param(b_df.columns, target_params[1])
                                 if m2: fig.add_trace(go.Scatter(x=w_df['timestamp'], y=pd.to_numeric(w_df[m2], errors='coerce'), name=m2, line=dict(color=SEC_COLOR, width=2, dash='dot')), secondary_y=True)
                             
-                            # Highlight only THIS specific boiler's events
                             b_events = events_df[(events_df['boiler'] == b_name) & (events_df['start_time'] <= ev['window_end']) & (events_df['end_time'] >= ev['window_start'])]
                             for _, b_ev in b_events.iterrows():
                                 fig.add_vrect(x0=b_ev['start_time'], x1=b_ev['end_time'], fillcolor="rgba(220, 38, 38, 0.15)", line_width=0)
@@ -441,7 +439,6 @@ elif app_mode == "Boiler operation and Flow":
             sum_df = pd.DataFrame()
             node_df = pd.DataFrame()
             
-            # Single Axis Graphs for 1:1 scale comparison
             fig1 = go.Figure()
             fig2 = go.Figure()
             
@@ -777,7 +774,7 @@ elif app_mode == "System Cross-Analysis":
                     match = find_matching_param(w_df.columns, p)
                     if match: valid_cols.append(match)
                 
-                # 3rd Graph Logic: Dedicated Boilerwise diagrams
+                # Dedicated Boilerwise diagrams
                 if len(valid_cols) == 1:
                     st.markdown(f"#### {b_name}: Timeline ({valid_cols[0]})")
                     fig_eff = go.Figure()
@@ -814,7 +811,7 @@ elif app_mode == "System Cross-Analysis":
                     fig_b_multi = set_legend_bottom(fig_b_multi)
                     st.plotly_chart(fig_b_multi, use_container_width=True)
                 
-                # Build Graph 1 (Unified Overlay Timeline)
+                # Aggregate Timeline Construction
                 for idx, c_name in enumerate(valid_cols):
                     c_color = MULTI_COLORS[idx % len(MULTI_COLORS)] if len(target_boilers) == 1 else B_COLORS.get(b_name, '#000000')
                     dash_style = 'solid' if len(target_boilers) == 1 else ['solid', 'dot', 'dash', 'dashdot'][idx % 4]
@@ -842,7 +839,6 @@ elif app_mode == "Parameter Correlation Matrix":
     
     target_heatmap_keywords = ['boiler pressure', 'steam flow meter', 'boiler capacity', 'furnace pressure', 'oxygen', 'eco inlet temp', 'deaerator level', 'deaerator temperature', 'fuel feeding screw', 'rotary feeder screw', 'eco outlet temp', 'pa flash temp', 'fw eco ol temperature']
     
-    # Establish common trackable columns before loop for Unified Trendline
     common_cols = []
     if list(cache.keys()):
         b_df = cache[list(cache.keys())[0]]
@@ -923,6 +919,10 @@ elif app_mode == "Parameter Correlation Matrix":
                 first_z, valid_cols = None, None
                 current_d = tl_start
                 
+                # Robustly find exact mapping for this specific boiler dynamically
+                b_trace_p1 = find_matching_param(b_df.columns, trace_p1)
+                b_trace_p2 = find_matching_param(b_df.columns, trace_p2)
+                
                 while current_d <= tl_end:
                     d_start = datetime.combine(current_d, time(0,0))
                     d_end = datetime.combine(current_d, time(23,59))
@@ -936,9 +936,9 @@ elif app_mode == "Parameter Correlation Matrix":
                                 first_z = corr_matrix.values
                                 valid_cols = corr_matrix.columns
                                 
-                            if trace_p1 in corr_matrix.columns and trace_p2 in corr_matrix.columns:
+                            if b_trace_p1 and b_trace_p2 and b_trace_p1 in corr_matrix.columns and b_trace_p2 in corr_matrix.columns:
                                 trend_dates.append(current_d)
-                                trend_corrs.append(corr_matrix.loc[trace_p1, trace_p2])
+                                trend_corrs.append(corr_matrix.loc[b_trace_p1, b_trace_p2])
                                 
                             frame_name = current_d.strftime("%Y-%m-%d")
                             frames.append(go.Frame(data=[go.Heatmap(z=corr_matrix.values)], name=frame_name))
@@ -1050,7 +1050,6 @@ elif app_mode == "Mass & Energy Balance":
         dynamic_node_colors = [node_colors[i % len(node_colors)] for i in range(len(nodes))]
         link_colors = [dynamic_node_colors[src].replace('rgb', 'rgba').replace(')', ', 0.4)') if 'rgb' in dynamic_node_colors[src] else 'rgba(180, 180, 180, 0.4)' for src in links_src]
 
-        # Removed forced x/y depth plotting to allow Plotly native node sorting (SankeyMATIC style auto-layout)
         fig_sankey = go.Figure(data=[go.Sankey(
             node = dict(
                 pad = 30,
