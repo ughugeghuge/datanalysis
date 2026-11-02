@@ -12,7 +12,7 @@ warnings.filterwarnings('ignore')
 st.set_page_config(page_title="Boiler Analytics Platform", layout="wide", initial_sidebar_state="expanded")
 
 # ==============================================================================
-# UI/UX: PREMIUM APPLE-STYLE SIDEBAR NAVIGATION CSS 
+# UI/UX: PREMIUM APPLE-STYLE SIDEBAR NAVIGATION CSS
 # ==============================================================================
 st.markdown("""
 <style>
@@ -141,7 +141,7 @@ SUM_LINE = '#d62728'
 SUM_FILL = 'rgba(214, 39, 40, 0.15)' 
 
 # ==============================================================================
-# DATA PROCESSING & CACHING
+# DATA PROCESSING & CACHING (WITH ZIP/CORRUPTION FALLBACKS)
 # ==============================================================================
 def normalize_col(name):
     return re.sub(r'[^a-zA-Z0-9]', '', str(name)).lower()
@@ -194,31 +194,43 @@ def process_local_files(data_dir='./boiler_data'):
     all_files = list(data_path.glob('*.*'))
     valid_files = [f for f in all_files if f.suffix in ['.xlsx', '.xls', '.csv']]
     if not valid_files: return None, None, []
+    
     boiler_groups = {'Boiler 1': [], 'Boiler 2': [], 'Boiler 3': []}
     for f in valid_files:
         if '1' in f.name: boiler_groups['Boiler 1'].append(f)
         elif '2' in f.name: boiler_groups['Boiler 2'].append(f)
         elif '3' in f.name: boiler_groups['Boiler 3'].append(f)
         else: boiler_groups['Boiler 1'].append(f)
+        
     for label, files in boiler_groups.items():
         if not files: continue
         df_list = []
         for target in files:
             try:
                 if target.name.endswith(('.xlsx', '.xls')):
-                    all_sheets = pd.read_excel(target, sheet_name=None, header=None)
-                    for sheet_name, raw_sheet in all_sheets.items():
-                        df = clean_and_normalize_sheet(raw_sheet)
-                        if not df.empty: df_list.append(df)
+                    try:
+                        all_sheets = pd.read_excel(target, sheet_name=None, header=None)
+                        for sheet_name, raw_sheet in all_sheets.items():
+                            df = clean_and_normalize_sheet(raw_sheet)
+                            if not df.empty: df_list.append(df)
+                    except Exception as e:
+                        # Fallback for "File is not a zip file" if a CSV was misnamed as XLSX
+                        if "zip" in str(e).lower() or "magic" in str(e).lower():
+                            df = clean_and_normalize_sheet(pd.read_csv(target, header=None))
+                            if not df.empty: df_list.append(df)
+                        else:
+                            st.error(f"Error loading {target.name}: {e}")
                 elif target.name.endswith('.csv'):
                     df = clean_and_normalize_sheet(pd.read_csv(target, header=None))
                     if not df.empty: df_list.append(df)
             except Exception as e:
-                st.error(f"Error loading {target.name}: {e}")
+                st.error(f"Error reading {target.name}: {e}")
+                
         if df_list:
             merged_df = pd.concat(df_list, ignore_index=True)
             merged_df = merged_df.drop_duplicates(subset=['timestamp']).sort_values('timestamp').reset_index(drop=True)
             cache[label] = merged_df
+            
     if not cache: return None, None, []
     all_params = sorted(list({str(c) for b in cache.values() for c in b.columns if c != 'timestamp'}))
     all_dates = pd.concat([b['timestamp'] for b in cache.values()])
@@ -235,11 +247,13 @@ def extract_events(data_cache, min_dur_minutes):
         for c in cols_no_ts:
             if any(k in normalize_col(c) for k in ['flow', 'steam', 'capacity']): return c
         return cols_no_ts[8] if len(cols_no_ts) >= 9 else cols_no_ts[-1]
+
     for b_name, b_df in data_cache.items():
         flow_col = detect_steam_flow_col(b_df.columns)
         flow_vals = pd.to_numeric(b_df[flow_col], errors='coerce').fillna(0)
         is_zero = flow_vals <= 0.05
         event_groups = b_df[is_zero].groupby((~is_zero).cumsum())
+        
         for _, g in event_groups:
             st_time, et_time = g['timestamp'].iloc[0], g['timestamp'].iloc[-1]
             dur = (et_time - st_time).total_seconds() / 60.0
@@ -302,13 +316,19 @@ min_date, max_date = dates_tuple
 default_flow_idx = 0
 default_press_idx = 1
 default_o2_idx = 0
+flow_a_idx = None
 if all_params:
     for i, p in enumerate(all_params):
         p_lower = p.lower()
         if p_lower == 'steam flow meter': default_flow_idx = i
         elif ('steam flow' in p_lower or 'flow meter' in p_lower) and all_params[default_flow_idx].lower() != 'steam flow meter': default_flow_idx = i
+        
+        if p_lower == 'steam flow meter a': flow_a_idx = i
+        elif 'flow meter a' in p_lower: flow_a_idx = i
+            
         if p_lower == 'boiler pressure': default_press_idx = i
         elif ('boiler pressure' in p_lower or 'steam pressure' in p_lower) and all_params[default_press_idx].lower() != 'boiler pressure': default_press_idx = i
+        
         if 'oxygen' in p_lower or 'o2' in p_lower: default_o2_idx = i
 
 app_mode = st.sidebar.radio("Navigation", [
@@ -343,15 +363,18 @@ if app_mode == "Data Management":
         data_dir = Path('./boiler_data')
         data_dir.mkdir(parents=True, exist_ok=True)
         files_saved = 0
+        
+        # Write via getvalue() for byte safety
         if b1_file:
-            with open(data_dir / f"Boiler1_{b1_file.name}", "wb") as f: f.write(b1_file.getbuffer())
+            with open(data_dir / f"Boiler1_{b1_file.name}", "wb") as f: f.write(b1_file.getvalue())
             files_saved += 1
         if b2_file:
-            with open(data_dir / f"Boiler2_{b2_file.name}", "wb") as f: f.write(b2_file.getbuffer())
+            with open(data_dir / f"Boiler2_{b2_file.name}", "wb") as f: f.write(b2_file.getvalue())
             files_saved += 1
         if b3_file:
-            with open(data_dir / f"Boiler3_{b3_file.name}", "wb") as f: f.write(b3_file.getbuffer())
+            with open(data_dir / f"Boiler3_{b3_file.name}", "wb") as f: f.write(b3_file.getvalue())
             files_saved += 1
+            
         if files_saved > 0:
             st.success(f"Successfully processed and saved {files_saved} file(s).")
             st.cache_data.clear()
@@ -369,75 +392,106 @@ elif not cache:
 elif app_mode == "Boiler operation and Flow":
     st.title("Boiler Operation and Flow")
     
-    with st.expander("Analysis Configuration", expanded=True):
-        colA, colB, colC = st.columns([1, 1, 2])
-        target_boilers = colA.multiselect("Select Boiler(s)", list(cache.keys()), default=list(cache.keys()), key="z_boilers")
-        sel_min_dur = colB.slider("Zero-Flow Threshold (mins)", 0, 60, 2)
-        target_params = colC.multiselect("Select Parameters to Display", options=all_params, default=[all_params[default_flow_idx], all_params[default_press_idx]], key="z_params")
-        
-        if not target_params: st.warning("Please select at least one parameter."); st.stop()
-        sel_param = target_params[0] # Primary logic trigger
-
-    events_df = extract_events(cache, sel_min_dur)
+    tab_custom, tab_a = st.tabs(["Custom Parameter Analysis", "Flow Meter Comparison (Main vs A)"])
     
-    if events_df.empty or not target_boilers:
-        st.warning("No zero-flow events match the specified criteria or no boilers selected.")
-    else:
-        filtered_events = events_df[events_df['boiler'].isin(target_boilers)]
-        dates = sorted(filtered_events['date'].unique()) if not filtered_events.empty else []
+    with tab_custom:
+        st.markdown("### Boiler Selection & Setup")
+        c_boilers, c_params = st.columns([1, 2])
+        target_boilers = c_boilers.multiselect("Select Target Boiler(s)", list(cache.keys()), default=list(cache.keys()), key="z_boilers")
+        target_params = c_params.multiselect("Select Parameters to Display", options=all_params, default=[all_params[default_flow_idx], all_params[default_press_idx]], key="z_params")
         
-        c_date, c_event = st.columns([1, 2])
-        sel_date = c_date.selectbox("Event Date", options=dates if dates else ["No Events"])
-        date_events = filtered_events[filtered_events['date'] == sel_date] if sel_date != "No Events" else pd.DataFrame()
-        event_opts = {f"{row['boiler']} - {row['label']}": idx for idx, row in date_events.iterrows()} if not date_events.empty else {"No matching events": None}
-        sel_event_label = c_event.selectbox("Select Specific Time Window", options=list(event_opts.keys()))
+        c_dur, c_date, c_event = st.columns([1, 1, 1.5])
+        sel_min_dur = c_dur.number_input("Zero-Flow Threshold (mins)", value=2, min_value=0, max_value=60)
         
-        event_id = event_opts.get(sel_event_label)
-        if event_id is not None:
-            ev = events_df.loc[event_id]
-            st.markdown("---")
+        if not target_params or not target_boilers:
+            st.warning("Please select at least one boiler and one parameter.")
+        else:
+            sel_param = target_params[0]
+            events_df = extract_events(cache, sel_min_dur)
             
-            # Display KPIs
-            totals = calculate_window_generation(cache, target_boilers, ev['start_time'], ev['end_time'], sel_param)
-            cols = st.columns(len(totals) + 1)
-            cols[0].metric("Event Duration", f"{ev['duration_mins']:.1f} min")
-            for idx, (label, val) in enumerate(totals.items()):
-                cols[idx + 1].metric(f"{label} Loss/Gen", f"{val:.1f} Tons")
-
-            # Dynamic Timeline Rendering based on number of selected parameters
-            st.markdown(f"#### Boiler Event Timelines")
-            for b_name in target_boilers:
-                if b_name not in cache: continue
-                b_df = cache[b_name]
-                w_df = b_df[(b_df['timestamp'] >= ev['window_start']) & (b_df['timestamp'] <= ev['window_end'])]
+            if events_df.empty:
+                st.warning("No zero-flow events match the specified criteria.")
+            else:
+                filtered_events = events_df[events_df['boiler'].isin(target_boilers)]
+                dates = sorted(filtered_events['date'].unique()) if not filtered_events.empty else []
+                sel_date = c_date.selectbox("Event Date", options=dates if dates else ["No Events"])
                 
-                if not w_df.empty:
-                    if len(target_params) <= 2:
-                        fig = make_subplots(specs=[[{"secondary_y": True}]])
-                        m1 = find_matching_param(b_df.columns, target_params[0])
-                        if m1: fig.add_trace(go.Scatter(x=w_df['timestamp'], y=pd.to_numeric(w_df[m1], errors='coerce'), name=m1, line=dict(color=B_COLORS.get(b_name), width=2)), secondary_y=False)
+                date_events = filtered_events[filtered_events['date'] == sel_date] if sel_date != "No Events" else pd.DataFrame()
+                event_opts = {f"{row['boiler']} - {row['label']}": idx for idx, row in date_events.iterrows()} if not date_events.empty else {"No matching events": None}
+                sel_event_label = c_event.selectbox("Select Specific Time Window", options=list(event_opts.keys()))
+                
+                event_id = event_opts.get(sel_event_label)
+                if event_id is not None:
+                    ev = events_df.loc[event_id]
+                    st.markdown("---")
+                    
+                    totals = calculate_window_generation(cache, target_boilers, ev['start_time'], ev['end_time'], sel_param)
+                    cols = st.columns(len(totals) + 1)
+                    cols[0].metric("Event Duration", f"{ev['duration_mins']:.1f} min")
+                    for idx, (label, val) in enumerate(totals.items()):
+                        cols[idx + 1].metric(f"{label} Loss/Gen", f"{val:.1f} Tons")
+        
+                    st.markdown(f"#### Boiler Event Timelines")
+                    for b_name in target_boilers:
+                        if b_name not in cache: continue
+                        b_df = cache[b_name]
+                        w_df = b_df[(b_df['timestamp'] >= ev['window_start']) & (b_df['timestamp'] <= ev['window_end'])]
                         
-                        if len(target_params) == 2:
-                            m2 = find_matching_param(b_df.columns, target_params[1])
-                            if m2: fig.add_trace(go.Scatter(x=w_df['timestamp'], y=pd.to_numeric(w_df[m2], errors='coerce'), name=m2, line=dict(color=SEC_COLOR, width=2, dash='dot')), secondary_y=True)
-                        
-                        fig.add_vrect(x0=ev['start_time'], x1=ev['end_time'], fillcolor="rgba(220, 38, 38, 0.15)", line_width=0)
-                        fig.update_layout(title=f"{b_name} Breakdown | Date: {sel_date}", template="plotly_white", hovermode="x unified", height=350, margin=dict(t=40, b=50))
-                        fig = set_legend_bottom(fig)
-                        st.plotly_chart(fig, use_container_width=True)
-                    else:
-                        # Stacked Subplots for 3+ metrics
-                        fig_multi = make_subplots(rows=len(target_params), cols=1, shared_xaxes=True, vertical_spacing=0.05, subplot_titles=target_params)
-                        for idx, p in enumerate(target_params):
-                            m_param = find_matching_param(b_df.columns, p)
-                            if m_param:
-                                c_color = MULTI_COLORS[idx % len(MULTI_COLORS)]
-                                fig_multi.add_trace(go.Scatter(x=w_df['timestamp'], y=pd.to_numeric(w_df[m_param], errors='coerce'), name=m_param, line=dict(color=c_color)), row=idx+1, col=1)
-                        
-                        fig_multi.add_vrect(x0=ev['start_time'], x1=ev['end_time'], fillcolor="rgba(220, 38, 38, 0.15)", line_width=0)
-                        fig_multi.update_layout(title=f"{b_name} Multi-Metric Breakdown | Date: {sel_date}", template="plotly_white", hovermode="x unified", height=200*len(target_params), margin=dict(t=40, b=50))
-                        fig_multi = set_legend_bottom(fig_multi)
-                        st.plotly_chart(fig_multi, use_container_width=True)
+                        if not w_df.empty:
+                            if len(target_params) <= 2:
+                                fig = make_subplots(specs=[[{"secondary_y": True}]])
+                                m1 = find_matching_param(b_df.columns, target_params[0])
+                                if m1: fig.add_trace(go.Scatter(x=w_df['timestamp'], y=pd.to_numeric(w_df[m1], errors='coerce'), name=m1, line=dict(color=B_COLORS.get(b_name), width=2)), secondary_y=False)
+                                if len(target_params) == 2:
+                                    m2 = find_matching_param(b_df.columns, target_params[1])
+                                    if m2: fig.add_trace(go.Scatter(x=w_df['timestamp'], y=pd.to_numeric(w_df[m2], errors='coerce'), name=m2, line=dict(color=SEC_COLOR, width=2, dash='dot')), secondary_y=True)
+                                
+                                fig.add_vrect(x0=ev['start_time'], x1=ev['end_time'], fillcolor="rgba(220, 38, 38, 0.15)", line_width=0)
+                                fig.update_layout(title=f"{b_name} Breakdown | Date: {sel_date}", template="plotly_white", hovermode="x unified", height=350, margin=dict(t=40, b=50))
+                                fig = set_legend_bottom(fig)
+                                st.plotly_chart(fig, use_container_width=True)
+                            else:
+                                fig_multi = make_subplots(rows=len(target_params), cols=1, shared_xaxes=True, vertical_spacing=0.05, subplot_titles=target_params)
+                                for idx, p in enumerate(target_params):
+                                    m_param = find_matching_param(b_df.columns, p)
+                                    if m_param:
+                                        c_color = MULTI_COLORS[idx % len(MULTI_COLORS)]
+                                        fig_multi.add_trace(go.Scatter(x=w_df['timestamp'], y=pd.to_numeric(w_df[m_param], errors='coerce'), name=m_param, line=dict(color=c_color)), row=idx+1, col=1)
+                                fig_multi.add_vrect(x0=ev['start_time'], x1=ev['end_time'], fillcolor="rgba(220, 38, 38, 0.15)", line_width=0)
+                                fig_multi.update_layout(title=f"{b_name} Multi-Metric Breakdown | Date: {sel_date}", template="plotly_white", hovermode="x unified", height=200*len(target_params), margin=dict(t=40, b=50))
+                                fig_multi = set_legend_bottom(fig_multi)
+                                st.plotly_chart(fig_multi, use_container_width=True)
+                                
+    with tab_a:
+        st.markdown("### Main Steam Flow vs Steam Flow Meter A")
+        c_boilers, c_date = st.columns([1, 1])
+        t_boilers_a = c_boilers.multiselect("Select Boiler(s)", list(cache.keys()), default=list(cache.keys()), key="z_boilers_a")
+        t_date_a = c_date.date_input("Target Date", value=min_date, min_value=min_date, max_value=max_date, key="z_date_a")
+        
+        main_flow = all_params[default_flow_idx]
+        a_flow = all_params[flow_a_idx] if flow_a_idx is not None else "Steam Flow Meter A (Not Found)"
+        
+        if not t_boilers_a: st.stop()
+        
+        st.markdown("---")
+        start_t = datetime.combine(t_date_a, time(0, 0))
+        end_t = datetime.combine(t_date_a, time(23, 59))
+        
+        for b_name in t_boilers_a:
+            if b_name not in cache: continue
+            b_df = cache[b_name]
+            m1 = find_matching_param(b_df.columns, main_flow)
+            m2 = find_matching_param(b_df.columns, a_flow) if flow_a_idx is not None else None
+            
+            w_df = b_df[(b_df['timestamp'] >= start_t) & (b_df['timestamp'] <= end_t)]
+            if not w_df.empty:
+                fig = make_subplots(specs=[[{"secondary_y": True}]])
+                if m1: fig.add_trace(go.Scatter(x=w_df['timestamp'], y=pd.to_numeric(w_df[m1], errors='coerce'), name=f"Main: {m1}", line=dict(color=B_COLORS.get(b_name), width=2)), secondary_y=False)
+                if m2: fig.add_trace(go.Scatter(x=w_df['timestamp'], y=pd.to_numeric(w_df[m2], errors='coerce'), name=f"Meter A: {m2}", line=dict(color=SEC_COLOR, width=2, dash='dot')), secondary_y=True)
+                
+                fig.update_layout(title=f"{b_name}: Main vs Meter A", template="plotly_white", hovermode="x unified", height=350, margin=dict(t=40, b=50))
+                fig = set_legend_bottom(fig)
+                st.plotly_chart(fig, use_container_width=True)
 
 # ==============================================================================
 # 2. LOADING PATTERN
@@ -445,17 +499,19 @@ elif app_mode == "Boiler operation and Flow":
 elif app_mode == "Loading pattern":
     st.title("Loading Pattern")
     
-    with st.expander("Analysis Configuration", expanded=True):
-        c1, c2 = st.columns([1, 2])
-        target_boilers = c1.multiselect("Select Boiler(s)", list(cache.keys()), default=list(cache.keys()), key="s_boilers")
-        target_params = c2.multiselect("Select Parameters to Display", options=all_params, default=[all_params[default_flow_idx], all_params[default_press_idx]], key="s_params")
-        if not target_params: st.warning("Please select at least one parameter."); st.stop()
-        sel_param = target_params[0] 
+    st.markdown("### Boiler & Parameter Configuration")
+    c_boilers, c_params = st.columns([1, 2])
+    target_boilers = c_boilers.multiselect("Select Boiler(s)", list(cache.keys()), default=list(cache.keys()), key="s_boilers")
+    target_params = c_params.multiselect("Select Parameters to Display", options=all_params, default=[all_params[default_flow_idx], all_params[default_press_idx]], key="s_params")
+    
+    if not target_params or not target_boilers: st.warning("Please select at least one boiler and parameter."); st.stop()
+    sel_param = target_params[0] 
 
+    st.markdown("---")
     st.markdown("### Daily & Shift Consumption Totalizer")
     target_date = st.date_input("Select Production Date", value=min_date, min_value=min_date, max_value=max_date)
     
-    if target_date and target_boilers:
+    if target_date:
         shift_A_start = datetime.combine(target_date - timedelta(days=1), time(22, 0))
         shift_A_end = datetime.combine(target_date, time(6, 0))
         shift_B_start = datetime.combine(target_date, time(6, 0))
@@ -478,12 +534,11 @@ elif app_mode == "Loading pattern":
 
     st.markdown("---")
     st.markdown("### Custom Timeline Explorer")
-    
-    colX, colY = st.columns(2)
+    colX, colY = st.columns([1, 2])
     explore_date = colX.date_input("Select Date to Explore", value=min_date, min_value=min_date, max_value=max_date, key="exp_date")
     time_range = colY.slider("Select Time Range", value=(time(0, 0), time(23, 59)), format="HH:mm", key="exp_time")
     
-    if explore_date and target_boilers:
+    if explore_date:
         start_dt = datetime.combine(explore_date, time_range[0])
         end_dt = datetime.combine(explore_date, time_range[1])
         
@@ -497,7 +552,6 @@ elif app_mode == "Loading pattern":
                     fig_dual = make_subplots(specs=[[{"secondary_y": True}]])
                     m1 = find_matching_param(b_df.columns, target_params[0])
                     if m1: fig_dual.add_trace(go.Scatter(x=w_df['timestamp'], y=pd.to_numeric(w_df[m1], errors='coerce'), name=m1, line=dict(color=B_COLORS.get(b_name), width=2)), secondary_y=False)
-                    
                     if len(target_params) == 2:
                         m2 = find_matching_param(b_df.columns, target_params[1])
                         if m2: fig_dual.add_trace(go.Scatter(x=w_df['timestamp'], y=pd.to_numeric(w_df[m2], errors='coerce'), name=m2, line=dict(color=SEC_COLOR, width=2, dash='dot')), secondary_y=True)
@@ -523,203 +577,161 @@ elif app_mode == "Loading pattern":
 elif app_mode == "Statistical & Scatter Analysis":
     st.title("Statistical & Scatter Analysis")
     
-    with st.expander("Analysis Configuration", expanded=True):
-        col1, col2, col3 = st.columns([1, 1.5, 2])
-        target_boilers = col1.multiselect("Select Boiler(s)", list(cache.keys()), default=list(cache.keys()), key="o2_boilers")
-        
-        preset_shift = col2.selectbox("Analysis Window", [
-            "Custom Time (Single Day)", 
-            "Custom Date Range", 
-            "Shift A (22:00 - 06:00)", 
-            "Shift B (06:00 - 14:00)", 
-            "Shift C (14:00 - 22:00)", 
-            "Full Day (00:00 - 23:59)"
-        ])
-        target_params = col3.multiselect("Select Parameters", options=all_params, default=[all_params[default_flow_idx], all_params[default_o2_idx]], key="o2_params")
-        if not target_params: st.warning("Please select at least one parameter."); st.stop()
-        
-        show_timeline = True
-        if preset_shift == "Custom Date Range":
-            d1, d2 = st.columns(2)
-            start_d = d1.date_input("Start Date", value=min_date, min_value=min_date, max_value=max_date, key="o2_start_d")
-            end_d = d2.date_input("End Date", value=max_date, min_value=min_date, max_value=max_date, key="o2_end_d")
-            start_t = datetime.combine(start_d, time(0, 0))
-            end_t = datetime.combine(end_d, time(23, 59))
-            show_timeline = False 
-        else:
-            target_o2_date = st.date_input("Target Date", value=min_date, min_value=min_date, max_value=max_date, key="o2_date")
-            if preset_shift == "Shift A (22:00 - 06:00)":
-                start_t = datetime.combine(target_o2_date - timedelta(days=1), time(22, 0))
-                end_t = datetime.combine(target_o2_date, time(6, 0))
-            elif preset_shift == "Shift B (06:00 - 14:00)":
-                start_t = datetime.combine(target_o2_date, time(6, 0))
-                end_t = datetime.combine(target_o2_date, time(14, 0))
-            elif preset_shift == "Shift C (14:00 - 22:00)":
-                start_t = datetime.combine(target_o2_date, time(14, 0))
-                end_t = datetime.combine(target_o2_date, time(22, 0))
-            elif preset_shift == "Full Day (00:00 - 23:59)":
-                start_t = datetime.combine(target_o2_date, time(0, 0))
-                end_t = datetime.combine(target_o2_date, time(23, 59))
-            else:
-                custom_tr = st.slider("Custom Time Window", value=(time(0, 0), time(23, 59)), format="HH:mm", key="o2_time")
-                start_t = datetime.combine(target_o2_date, custom_tr[0])
-                end_t = datetime.combine(target_o2_date, custom_tr[1])
-
-        op_threshold = st.number_input(f"Active Boiler Threshold ({target_params[0]} >)", value=1.0, step=0.5, help="Filters out shutdowns to reveal true operating stats.")
+    st.markdown("### Setup Configuration")
+    col1, col2 = st.columns([1, 2])
+    target_boilers = col1.multiselect("Select Boiler(s)", list(cache.keys()), default=list(cache.keys()), key="o2_boilers")
+    target_params = col2.multiselect("Select Parameters", options=all_params, default=[all_params[default_flow_idx], all_params[default_o2_idx]], key="o2_params")
     
-    if target_boilers:
-        stats_data = []
-        line_charts = []
+    if not target_params or not target_boilers: st.warning("Please select at least one boiler and one parameter."); st.stop()
+    
+    c_shift, c_date, c_thresh = st.columns([1, 1, 1])
+    preset_shift = c_shift.selectbox("Analysis Window", ["Custom Time (Single Day)", "Custom Date Range", "Shift A", "Shift B", "Shift C", "Full Day"])
+    op_threshold = c_thresh.number_input(f"Active Threshold ({target_params[0]} >)", value=1.0, step=0.5, help="Filters out shutdowns to reveal true operating stats.")
+    
+    show_timeline = True
+    if preset_shift == "Custom Date Range":
+        dr1, dr2 = st.columns(2)
+        start_d = dr1.date_input("Start Date", value=min_date, min_value=min_date, max_value=max_date, key="o2_start_d")
+        end_d = dr2.date_input("End Date", value=max_date, min_value=min_date, max_value=max_date, key="o2_end_d")
+        start_t = datetime.combine(start_d, time(0, 0))
+        end_t = datetime.combine(end_d, time(23, 59))
+        show_timeline = False 
+    else:
+        target_o2_date = c_date.date_input("Target Date", value=min_date, min_value=min_date, max_value=max_date, key="o2_date")
+        if preset_shift == "Shift A":
+            start_t = datetime.combine(target_o2_date - timedelta(days=1), time(22, 0)); end_t = datetime.combine(target_o2_date, time(6, 0))
+        elif preset_shift == "Shift B":
+            start_t = datetime.combine(target_o2_date, time(6, 0)); end_t = datetime.combine(target_o2_date, time(14, 0))
+        elif preset_shift == "Shift C":
+            start_t = datetime.combine(target_o2_date, time(14, 0)); end_t = datetime.combine(target_o2_date, time(22, 0))
+        elif preset_shift == "Full Day":
+            start_t = datetime.combine(target_o2_date, time(0, 0)); end_t = datetime.combine(target_o2_date, time(23, 59))
+        else:
+            custom_tr = st.slider("Custom Time Window", value=(time(0, 0), time(23, 59)), format="HH:mm", key="o2_time")
+            start_t = datetime.combine(target_o2_date, custom_tr[0]); end_t = datetime.combine(target_o2_date, custom_tr[1])
+
+    st.markdown("---")
+    
+    stats_data = []
+    line_charts = []
+    generate_scatter = (len(target_params) == 2)
+    fig_scat = go.Figure() if generate_scatter else None
+    fig_3d = go.Figure() if generate_scatter else None
+    pooled_x, pooled_y = [], []
+    dist_figs = {p: go.Figure() for p in target_params}
+    
+    for b_name in target_boilers:
+        if b_name not in cache: continue
+        b_df_o2 = cache[b_name]
         
-        # We only generate Scatter and 3D maps if exactly 2 parameters are chosen
-        generate_scatter = (len(target_params) == 2)
-        fig_scat = go.Figure() if generate_scatter else None
-        fig_3d = go.Figure() if generate_scatter else None
-        pooled_x = []
-        pooled_y = []
+        mapped_cols = [find_matching_param(b_df_o2.columns, p) for p in target_params]
+        if not all(mapped_cols): continue
         
-        # To dynamically hold distributions for any number of selected parameters
-        dist_figs = {p: go.Figure() for p in target_params}
+        w_df_o2 = b_df_o2[(b_df_o2['timestamp'] >= start_t) & (b_df_o2['timestamp'] <= end_t)].copy()
+        for mc in mapped_cols: w_df_o2[f'{mc}_Num'] = pd.to_numeric(w_df_o2[mc], errors='coerce')
+        w_df_o2 = w_df_o2.dropna(subset=[f'{mc}_Num' for mc in mapped_cols])
         
-        for b_name in target_boilers:
-            if b_name not in cache: continue
-            b_df_o2 = cache[b_name]
+        if not w_df_o2.empty:
+            stats_df_o2 = w_df_o2[w_df_o2[f'{mapped_cols[0]}_Num'] >= op_threshold]
+            b_stats = {"Boiler": b_name}
             
-            # Map selected params to actual columns
-            mapped_cols = [find_matching_param(b_df_o2.columns, p) for p in target_params]
-            if not all(mapped_cols): continue
-            
-            w_df_o2 = b_df_o2[(b_df_o2['timestamp'] >= start_t) & (b_df_o2['timestamp'] <= end_t)].copy()
-            
-            # Convert all mapped cols to numeric
-            for mc in mapped_cols: w_df_o2[f'{mc}_Num'] = pd.to_numeric(w_df_o2[mc], errors='coerce')
-            w_df_o2 = w_df_o2.dropna(subset=[f'{mc}_Num' for mc in mapped_cols])
-            
-            if not w_df_o2.empty:
-                stats_df_o2 = w_df_o2[w_df_o2[f'{mapped_cols[0]}_Num'] >= op_threshold]
+            if not stats_df_o2.empty:
+                for mc, p in zip(mapped_cols, target_params):
+                    b_stats[f"Min {p}"] = stats_df_o2[f'{mc}_Num'].min()
+                    b_stats[f"Avg {p}"] = stats_df_o2[f'{mc}_Num'].mean()
+                    b_stats[f"Max {p}"] = stats_df_o2[f'{mc}_Num'].max()
+                    dist_figs[p].add_trace(go.Histogram(x=stats_df_o2[f'{mc}_Num'], histnorm='probability density', name=b_name, marker_color=B_COLORS.get(b_name), opacity=0.7))
                 
-                # Append Stats
-                b_stats = {"Boiler": b_name}
-                if not stats_df_o2.empty:
-                    for mc, p in zip(mapped_cols, target_params):
-                        b_stats[f"Min {p}"] = stats_df_o2[f'{mc}_Num'].min()
-                        b_stats[f"Avg {p}"] = stats_df_o2[f'{mc}_Num'].mean()
-                        b_stats[f"Max {p}"] = stats_df_o2[f'{mc}_Num'].max()
-                        
-                        # Add to distribution curves
-                        dist_figs[p].add_trace(go.Histogram(
-                            x=stats_df_o2[f'{mc}_Num'], histnorm='probability density',
-                            name=b_name, marker_color=B_COLORS.get(b_name), opacity=0.7
-                        ))
-                    
-                    if generate_scatter:
-                        pooled_x.extend(stats_df_o2[f'{mapped_cols[0]}_Num'].values)
-                        pooled_y.extend(stats_df_o2[f'{mapped_cols[1]}_Num'].values)
-                        
-                        fig_scat.add_trace(go.Scattergl(
-                            x=stats_df_o2[f'{mapped_cols[0]}_Num'], y=stats_df_o2[f'{mapped_cols[1]}_Num'], mode='markers',
-                            name=b_name, marker=dict(color=B_COLORS.get(b_name), size=5, opacity=0.6),
-                            text=stats_df_o2['timestamp'].dt.strftime('%Y-%m-%d %H:%M'), hoverinfo="text+x+y+name"
-                        ))
-                else:
-                    for p in target_params:
-                        b_stats[f"Min {p}"] = 0.0
-                        b_stats[f"Avg {p}"] = 0.0
-                        b_stats[f"Max {p}"] = 0.0
-                stats_data.append(b_stats)
-                
-                if show_timeline:
-                    if len(target_params) <= 2:
-                        fig_line = make_subplots(specs=[[{"secondary_y": True}]])
-                        fig_line.add_trace(go.Scatter(x=w_df_o2['timestamp'], y=w_df_o2[f'{mapped_cols[0]}_Num'], name=target_params[0], line=dict(color=B_COLORS.get(b_name), width=2)), secondary_y=False)
-                        if len(target_params) == 2:
-                            fig_line.add_trace(go.Scatter(x=w_df_o2['timestamp'], y=w_df_o2[f'{mapped_cols[1]}_Num'], name=target_params[1], line=dict(color=SEC_COLOR, width=2, dash='dot')), secondary_y=True)
-                        fig_line.update_layout(title=f"{b_name} Breakdown | Date: {start_t.date()}", template="plotly_white", hovermode="x unified", height=300, margin=dict(t=40, b=50))
-                        fig_line = set_legend_bottom(fig_line)
-                        line_charts.append(fig_line)
-                    else:
-                        fig_multi = make_subplots(rows=len(target_params), cols=1, shared_xaxes=True, vertical_spacing=0.05, subplot_titles=target_params)
-                        for idx, (mc, p) in enumerate(zip(mapped_cols, target_params)):
-                            c_color = MULTI_COLORS[idx % len(MULTI_COLORS)]
-                            fig_multi.add_trace(go.Scatter(x=w_df_o2['timestamp'], y=w_df_o2[f'{mc}_Num'], name=p, line=dict(color=c_color)), row=idx+1, col=1)
-                        fig_multi.update_layout(title=f"{b_name} Multi-Metric Analysis | Date: {start_t.date()}", template="plotly_white", hovermode="x unified", height=200*len(target_params), margin=dict(t=40, b=50))
-                        fig_multi = set_legend_bottom(fig_multi)
-                        line_charts.append(fig_multi)
-        
-        if stats_data:
-            st.markdown("#### Period Statistics Summary (Active Operating Flow Only)")
-            st.dataframe(pd.DataFrame(stats_data).set_index("Boiler").style.format("{:.2f}"), use_container_width=True)
+                if generate_scatter:
+                    pooled_x.extend(stats_df_o2[f'{mapped_cols[0]}_Num'].values)
+                    pooled_y.extend(stats_df_o2[f'{mapped_cols[1]}_Num'].values)
+                    fig_scat.add_trace(go.Scattergl(x=stats_df_o2[f'{mapped_cols[0]}_Num'], y=stats_df_o2[f'{mapped_cols[1]}_Num'], mode='markers', name=b_name, marker=dict(color=B_COLORS.get(b_name), size=5, opacity=0.6), text=stats_df_o2['timestamp'].dt.strftime('%Y-%m-%d %H:%M'), hoverinfo="text+x+y+name"))
+            else:
+                for p in target_params:
+                    b_stats[f"Min {p}"] = 0.0; b_stats[f"Avg {p}"] = 0.0; b_stats[f"Max {p}"] = 0.0
+            stats_data.append(b_stats)
             
             if show_timeline:
-                st.markdown("#### Timeline Breakdowns")
-                for fig in line_charts:
-                    st.plotly_chart(fig, use_container_width=True)
-            else:
-                st.info("💡 Timelines are intentionally hidden in 'Custom Date Range' to prevent browser lag. Scroll down for aggregated plots.")
-            
-            if generate_scatter:
-                st.markdown("#### 2D Scatter Correlation")
-                fig_scat.update_layout(title=f"Date: {start_t.date()}", xaxis_title=target_params[0], yaxis_title=target_params[1], template="plotly_white", height=450, margin=dict(t=40, b=50))
-                fig_scat = set_legend_bottom(fig_scat)
-                st.plotly_chart(fig_scat, use_container_width=True)
-            else:
-                st.info("💡 Select exactly 2 parameters in the configuration panel above to unlock the 2D Scatterplot and 3D Bivariate Density Map.")
-            
-            st.markdown("#### 1D Parameter Variations (Probability Density)")
-            d_cols = st.columns(2)
-            for idx, p in enumerate(target_params):
-                dist_figs[p].update_layout(barmode='overlay', title=f"{p} Distribution | Date: {start_t.date()}", template="plotly_white", height=350, margin=dict(t=40, b=50))
-                dist_figs[p] = set_legend_bottom(dist_figs[p])
-                d_cols[idx % 2].plotly_chart(dist_figs[p], use_container_width=True)
-            
-            if generate_scatter and pooled_x and pooled_y:
-                st.markdown(f"#### 3D Bivariate Density Map ({target_params[0]} vs {target_params[1]})")
-                H, xedges, yedges = np.histogram2d(pooled_x, pooled_y, bins=30, density=True)
-                fig_3d.add_trace(go.Surface(z=H.T, x=xedges[:-1], y=yedges[:-1], colorscale='Viridis', opacity=0.9))
-                fig_3d.update_layout(
-                    title=f"Date: {start_t.date()}",
-                    scene=dict(xaxis_title=target_params[0], yaxis_title=target_params[1], zaxis_title="Probability Density", camera=dict(eye=dict(x=1.5, y=-1.5, z=1.2))),
-                    height=600, margin=dict(t=40, b=50)
-                )
-                st.plotly_chart(fig_3d, use_container_width=True, config={'scrollZoom': False})
+                if len(target_params) <= 2:
+                    fig_line = make_subplots(specs=[[{"secondary_y": True}]])
+                    fig_line.add_trace(go.Scatter(x=w_df_o2['timestamp'], y=w_df_o2[f'{mapped_cols[0]}_Num'], name=target_params[0], line=dict(color=B_COLORS.get(b_name), width=2)), secondary_y=False)
+                    if len(target_params) == 2:
+                        fig_line.add_trace(go.Scatter(x=w_df_o2['timestamp'], y=w_df_o2[f'{mapped_cols[1]}_Num'], name=target_params[1], line=dict(color=SEC_COLOR, width=2, dash='dot')), secondary_y=True)
+                    fig_line.update_layout(title=f"{b_name} Breakdown | Date: {start_t.date()}", template="plotly_white", hovermode="x unified", height=300, margin=dict(t=40, b=50))
+                    fig_line = set_legend_bottom(fig_line)
+                    line_charts.append(fig_line)
+                else:
+                    fig_multi = make_subplots(rows=len(target_params), cols=1, shared_xaxes=True, vertical_spacing=0.05, subplot_titles=target_params)
+                    for idx, (mc, p) in enumerate(zip(mapped_cols, target_params)):
+                        c_color = MULTI_COLORS[idx % len(MULTI_COLORS)]
+                        fig_multi.add_trace(go.Scatter(x=w_df_o2['timestamp'], y=w_df_o2[f'{mc}_Num'], name=p, line=dict(color=c_color)), row=idx+1, col=1)
+                    fig_multi.update_layout(title=f"{b_name} Multi-Metric Analysis | Date: {start_t.date()}", template="plotly_white", hovermode="x unified", height=200*len(target_params), margin=dict(t=40, b=50))
+                    fig_multi = set_legend_bottom(fig_multi)
+                    line_charts.append(fig_multi)
+    
+    if stats_data:
+        st.markdown("#### Period Statistics Summary (Active Operating Flow Only)")
+        st.dataframe(pd.DataFrame(stats_data).set_index("Boiler").style.format("{:.2f}"), use_container_width=True)
+        
+        if show_timeline:
+            st.markdown("#### Timeline Breakdowns")
+            for fig in line_charts: st.plotly_chart(fig, use_container_width=True)
         else:
-            st.warning("No valid overlapping data points found.")
+            st.info("💡 Timelines are intentionally hidden in 'Custom Date Range' to prevent browser lag. Scroll down for aggregated plots.")
+        
+        if generate_scatter:
+            st.markdown("#### 2D Scatter Correlation")
+            fig_scat.update_layout(title=f"Date: {start_t.date()}", xaxis_title=target_params[0], yaxis_title=target_params[1], template="plotly_white", height=450, margin=dict(t=40, b=50))
+            fig_scat = set_legend_bottom(fig_scat)
+            st.plotly_chart(fig_scat, use_container_width=True)
+        else:
+            st.info("💡 Select exactly 2 parameters in the configuration panel above to unlock the 2D Scatterplot and 3D Bivariate Density Map.")
+        
+        st.markdown("#### 1D Parameter Variations (Probability Density)")
+        d_cols = st.columns(2)
+        for idx, p in enumerate(target_params):
+            dist_figs[p].update_layout(barmode='overlay', title=f"{p} Distribution | Date: {start_t.date()}", template="plotly_white", height=350, margin=dict(t=40, b=50))
+            dist_figs[p] = set_legend_bottom(dist_figs[p])
+            d_cols[idx % 2].plotly_chart(dist_figs[p], use_container_width=True)
+        
+        if generate_scatter and pooled_x and pooled_y:
+            st.markdown(f"#### 3D Bivariate Density Map ({target_params[0]} vs {target_params[1]})")
+            H, xedges, yedges = np.histogram2d(pooled_x, pooled_y, bins=30, density=True)
+            fig_3d.add_trace(go.Surface(z=H.T, x=xedges[:-1], y=yedges[:-1], colorscale='Viridis', opacity=0.9))
+            fig_3d.update_layout(
+                title=f"Date: {start_t.date()}",
+                scene=dict(xaxis_title=target_params[0], yaxis_title=target_params[1], zaxis_title="Probability Density", camera=dict(eye=dict(x=1.5, y=-1.5, z=1.2))),
+                height=600, margin=dict(t=40, b=50)
+            )
+            st.plotly_chart(fig_3d, use_container_width=True, config={'scrollZoom': False})
+    else:
+        st.warning("No valid overlapping data points found.")
 
 # ==============================================================================
-# 4. SYSTEM CROSS-ANALYSIS (DYNAMIC MULTI-PARAMETER)
+# 4. SYSTEM CROSS-ANALYSIS
 # ==============================================================================
 elif app_mode == "System Cross-Analysis":
     st.title("System Cross-Analysis")
     
-    with st.expander("Analysis Configuration", expanded=True):
-        col1, col2 = st.columns([1, 1.5])
-        target_boilers = col1.multiselect("Select Boiler(s)", list(cache.keys()), default=[list(cache.keys())[0]], key="crs_boilers")
-        preset_shift = col2.selectbox("Analysis Window", [
-            "Full Day (00:00 - 23:59)", 
-            "Shift A (22:00 - 06:00)", 
-            "Shift B (06:00 - 14:00)", 
-            "Shift C (14:00 - 22:00)"
-        ], key="crs_preset")
-        
-        target_crs_date = st.date_input("Target Date", value=min_date, min_value=min_date, max_value=max_date, key="crs_date")
-        
-        if preset_shift == "Shift A (22:00 - 06:00)":
-            start_t = datetime.combine(target_crs_date - timedelta(days=1), time(22, 0))
-            end_t = datetime.combine(target_crs_date, time(6, 0))
-        elif preset_shift == "Shift B (06:00 - 14:00)":
-            start_t = datetime.combine(target_crs_date, time(6, 0))
-            end_t = datetime.combine(target_crs_date, time(14, 0))
-        elif preset_shift == "Shift C (14:00 - 22:00)":
-            start_t = datetime.combine(target_crs_date, time(14, 0))
-            end_t = datetime.combine(target_crs_date, time(22, 0))
-        else:
-            start_t = datetime.combine(target_crs_date, time(0, 0))
-            end_t = datetime.combine(target_crs_date, time(23, 59))
+    st.markdown("### Boiler & Parameter Configuration")
+    col1, col2 = st.columns([1, 2])
+    target_boilers = col1.multiselect("Select Boiler(s)", list(cache.keys()), default=[list(cache.keys())[0]], key="crs_boilers")
+    target_params = col2.multiselect("Select Parameters to Cross-Analyze", options=all_params, default=[all_params[default_flow_idx], all_params[default_press_idx]], key="crs_params")
+    
+    c_shift, c_date = st.columns(2)
+    preset_shift = c_shift.selectbox("Analysis Window", ["Full Day", "Shift A", "Shift B", "Shift C"])
+    target_crs_date = c_date.date_input("Target Date", value=min_date, min_value=min_date, max_value=max_date, key="crs_date")
+    
+    if preset_shift == "Shift A":
+        start_t = datetime.combine(target_crs_date - timedelta(days=1), time(22, 0)); end_t = datetime.combine(target_crs_date, time(6, 0))
+    elif preset_shift == "Shift B":
+        start_t = datetime.combine(target_crs_date, time(6, 0)); end_t = datetime.combine(target_crs_date, time(14, 0))
+    elif preset_shift == "Shift C":
+        start_t = datetime.combine(target_crs_date, time(14, 0)); end_t = datetime.combine(target_crs_date, time(22, 0))
+    else:
+        start_t = datetime.combine(target_crs_date, time(0, 0)); end_t = datetime.combine(target_crs_date, time(23, 59))
 
-        target_params = st.multiselect("Select Parameters to Cross-Analyze", options=all_params, default=[all_params[default_flow_idx], all_params[default_press_idx]], key="crs_params")
-
-    if not target_boilers or not target_params:
-        st.stop()
+    if not target_boilers or not target_params: st.stop()
 
     for target_boiler in target_boilers:
         if target_boiler in cache:
@@ -771,73 +783,50 @@ elif app_mode == "System Cross-Analysis":
                     fig_multi.update_layout(title=f"Date: {start_t.date()}", template="plotly_white", hovermode="x unified", height=dynamic_height, margin=dict(t=60, b=50))
                     fig_multi = set_legend_bottom(fig_multi)
                     st.plotly_chart(fig_multi, use_container_width=True)
-                    
+                    st.info("💡 Select exactly 2 parameters to generate a Scatterplot correlation.")
             st.markdown("---")
 
 # ==============================================================================
-# 5. PARAMETER CORRELATION MATRIX (PLOTLY ANIMATION)
+# 5. PARAMETER CORRELATION MATRIX (ANIMATED PRE-RENDER)
 # ==============================================================================
 elif app_mode == "Parameter Correlation Matrix":
     st.title("Parameter Correlation Matrix")
     
-    with st.expander("Analysis Configuration", expanded=True):
-        col1, col2 = st.columns([1, 1.5])
-        target_boilers = col1.multiselect("Select Boiler(s)", list(cache.keys()), default=[list(cache.keys())[0]], key="corr_boilers")
+    st.markdown("### Target Boilers")
+    target_boilers = st.multiselect("Select Boiler(s)", list(cache.keys()), default=[list(cache.keys())[0]], key="corr_boilers")
+    
+    c_mode, c_date1, c_date2 = st.columns([1, 1, 1])
+    analysis_mode = c_mode.radio("Analysis Mode", ["Single Fixed Window", "Cinematic Time-Lapse Animation"])
+    
+    if analysis_mode == "Single Fixed Window":
+        preset_shift = c_date1.selectbox("Analysis Window", ["Full Day", "Shift A", "Shift B", "Shift C"])
+        target_corr_date = c_date2.date_input("Target Date", value=min_date, min_value=min_date, max_value=max_date)
         
-        analysis_mode = col2.radio("Analysis Mode", ["Single Fixed Window", "Cinematic Time-Lapse Animation"], horizontal=True)
-        
-        if analysis_mode == "Single Fixed Window":
-            preset_shift = st.selectbox("Analysis Window", [
-                "Full Day (00:00 - 23:59)", 
-                "Shift A (22:00 - 06:00)", 
-                "Shift B (06:00 - 14:00)", 
-                "Shift C (14:00 - 22:00)"
-            ], key="corr_preset")
-            target_corr_date = st.date_input("Target Date", value=min_date, min_value=min_date, max_value=max_date, key="corr_date")
-            
-            if preset_shift == "Shift A (22:00 - 06:00)":
-                start_t = datetime.combine(target_corr_date - timedelta(days=1), time(22, 0))
-                end_t = datetime.combine(target_corr_date, time(6, 0))
-            elif preset_shift == "Shift B (06:00 - 14:00)":
-                start_t = datetime.combine(target_corr_date, time(6, 0))
-                end_t = datetime.combine(target_corr_date, time(14, 0))
-            elif preset_shift == "Shift C (14:00 - 22:00)":
-                start_t = datetime.combine(target_corr_date, time(14, 0))
-                end_t = datetime.combine(target_corr_date, time(22, 0))
-            else:
-                start_t = datetime.combine(target_corr_date, time(0, 0))
-                end_t = datetime.combine(target_corr_date, time(23, 59))
+        if preset_shift == "Shift A":
+            start_t = datetime.combine(target_corr_date - timedelta(days=1), time(22, 0)); end_t = datetime.combine(target_corr_date, time(6, 0))
+        elif preset_shift == "Shift B":
+            start_t = datetime.combine(target_corr_date, time(6, 0)); end_t = datetime.combine(target_corr_date, time(14, 0))
+        elif preset_shift == "Shift C":
+            start_t = datetime.combine(target_corr_date, time(14, 0)); end_t = datetime.combine(target_corr_date, time(22, 0))
         else:
-            d1, d2 = st.columns(2)
-            tl_start = d1.date_input("Start Date of Animation", value=min_date, min_value=min_date, max_value=max_date)
-            tl_end = d2.date_input("End Date of Animation", value=max_date, min_value=min_date, max_value=max_date)
-            
-            if tl_end < tl_start:
-                st.error("End Date must be after Start Date")
-                st.stop()
-            # Constrain animation length to protect browser memory (Max 30 days recommended)
-            if (tl_end - tl_start).days > 60:
-                st.warning("Date range too large for animation. Please select a range under 60 days.")
-                st.stop()
+            start_t = datetime.combine(target_corr_date, time(0, 0)); end_t = datetime.combine(target_corr_date, time(23, 59))
+    else:
+        tl_start = c_date1.date_input("Animation Start Date", value=min_date, min_value=min_date, max_value=max_date)
+        tl_end = c_date2.date_input("Animation End Date", value=max_date, min_value=min_date, max_value=max_date)
+        if tl_end < tl_start: st.error("End Date must be after Start Date"); st.stop()
+        if (tl_end - tl_start).days > 60: st.warning("Range too large for animation memory (Max 60 days)."); st.stop()
 
-    target_heatmap_keywords = [
-        'boiler pressure', 'steam flow meter', 'boiler capacity', 'furnace pressure',
-        'oxygen', 'eco inlet temp', 'deaerator level', 'deaerator temperature',
-        'fuel feeding screw', 'rotary feeder screw', 'eco outlet temp',
-        'pa flash temp', 'fw eco ol temperature'
-    ]
+    target_heatmap_keywords = ['boiler pressure', 'steam flow meter', 'boiler capacity', 'furnace pressure', 'oxygen', 'eco inlet temp', 'deaerator level', 'deaerator temperature', 'fuel feeding screw', 'rotary feeder screw', 'eco outlet temp', 'pa flash temp', 'fw eco ol temperature']
 
     for target_boiler in target_boilers:
         st.markdown("---")
         st.markdown(f"#### Correlation Heatmap: {target_boiler}")
         if target_boiler in cache:
             b_df = cache[target_boiler]
-            
             cols_to_keep = []
             for kw in target_heatmap_keywords:
                 matched_col = find_matching_param(b_df.columns, kw)
-                if matched_col and matched_col not in cols_to_keep:
-                    cols_to_keep.append(matched_col)
+                if matched_col and matched_col not in cols_to_keep: cols_to_keep.append(matched_col)
                     
             if not cols_to_keep:
                 st.warning(f"No targeted parameters found for {target_boiler}.")
@@ -861,15 +850,13 @@ elif app_mode == "Parameter Correlation Matrix":
                 else:
                     st.warning("No data available for this shift.")
                     
-            else: # Cinematic Time-Lapse Animation
-                st.info("Click the **Play** button below the matrix to watch correlations evolve day-by-day.")
-                
+            else: # Pre-Rendered Frame Animation
+                st.info("Click the **Play** button below to watch correlations dynamically evolve day-by-day.")
                 frames = []
                 slider_steps = []
-                first_z = None
-                valid_cols = None
-                
+                first_z, valid_cols = None, None
                 current_d = tl_start
+                
                 while current_d <= tl_end:
                     d_start = datetime.combine(current_d, time(0,0))
                     d_end = datetime.combine(current_d, time(23,59))
@@ -879,26 +866,15 @@ elif app_mode == "Parameter Correlation Matrix":
                         w_df_numeric = w_df[cols_to_keep].apply(pd.to_numeric, errors='coerce').dropna(axis=1, how='all')
                         if w_df_numeric.shape[1] > 1:
                             corr_matrix = w_df_numeric.corr(numeric_only=True).fillna(0)
-                            
                             if first_z is None:
                                 first_z = corr_matrix.values
                                 valid_cols = corr_matrix.columns
-                                
                             frame_name = current_d.strftime("%Y-%m-%d")
-                            frames.append(go.Frame(
-                                data=[go.Heatmap(z=corr_matrix.values)],
-                                name=frame_name
-                            ))
-                            
+                            frames.append(go.Frame(data=[go.Heatmap(z=corr_matrix.values)], name=frame_name))
                             slider_steps.append({
-                                "args": [
-                                    [frame_name],
-                                    {"frame": {"duration": 600, "redraw": True}, "mode": "immediate", "transition": {"duration": 600}}
-                                ],
-                                "label": frame_name,
-                                "method": "animate"
+                                "args": [[frame_name], {"frame": {"duration": 780, "redraw": True}, "mode": "immediate", "transition": {"duration": 780}}],
+                                "label": frame_name, "method": "animate"
                             })
-                            
                     current_d += timedelta(days=1)
                     
                 if frames and first_z is not None:
@@ -906,33 +882,21 @@ elif app_mode == "Parameter Correlation Matrix":
                         data=[go.Heatmap(z=first_z, x=valid_cols, y=valid_cols, colorscale='RdBu_r', zmin=-1, zmax=1)],
                         frames=frames
                     )
-                    
                     fig_anim.update_layout(
-                        template="plotly_white",
-                        height=750, 
-                        margin=dict(t=40, b=150, l=150),
-                        xaxis=dict(tickangle=45),
+                        template="plotly_white", height=750, margin=dict(t=40, b=150, l=150), xaxis=dict(tickangle=45),
                         updatemenus=[dict(
                             type="buttons",
                             buttons=[
-                                dict(label="▶ Play", method="animate", args=[None, {"frame": {"duration": 600, "redraw": True}, "fromcurrent": True, "transition": {"duration": 600}}]),
+                                dict(label="▶ Play", method="animate", args=[None, {"frame": {"duration": 780, "redraw": True}, "fromcurrent": True, "transition": {"duration": 780}}]),
                                 dict(label="⏸ Pause", method="animate", args=[[None], {"frame": {"duration": 0, "redraw": False}, "mode": "immediate", "transition": {"duration": 0}}])
                             ],
-                            direction="left",
-                            pad={"r": 10, "t": 87},
-                            showactive=False,
-                            x=0.1, y=0, xanchor="right", yanchor="top"
+                            direction="left", pad={"r": 10, "t": 87}, showactive=False, x=0.1, y=0, xanchor="right", yanchor="top"
                         )],
                         sliders=[dict(
-                            active=0,
-                            yanchor="top",
-                            xanchor="left",
+                            active=0, yanchor="top", xanchor="left",
                             currentvalue={"font": {"size": 16}, "prefix": "Analyzing Date: ", "visible": True, "xanchor": "right"},
-                            transition={"duration": 600, "easing": "cubic-in-out"},
-                            pad={"b": 10, "t": 50},
-                            len=0.9,
-                            x=0.1, y=0,
-                            steps=slider_steps
+                            transition={"duration": 780, "easing": "cubic-in-out"},
+                            pad={"b": 10, "t": 50}, len=0.9, x=0.1, y=0, steps=slider_steps
                         )]
                     )
                     st.plotly_chart(fig_anim, use_container_width=True)
