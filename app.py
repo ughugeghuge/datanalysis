@@ -227,7 +227,6 @@ if all_params:
         if p_lower == 'steam flow meter': default_flow_idx = i
         elif ('steam flow' in p_lower or 'flow meter' in p_lower) and all_params[default_flow_idx].lower() != 'steam flow meter': default_flow_idx = i
         
-        # Strict logic for Meter A: Exclude "Tot" or "Totalizer"
         if p_lower == 'steam flow meter a': flow_a_idx = i
         elif 'flow meter a' in p_lower and 'tot' not in p_lower and flow_a_idx is None: flow_a_idx = i
             
@@ -349,7 +348,12 @@ elif app_mode == "Boiler operation and Flow":
                     sum_df['Aggregate'] = sum_df.sum(axis=1)
                     fig_sum = go.Figure()
                     fig_sum.add_trace(go.Scatter(x=sum_df.index, y=sum_df['Aggregate'], mode='lines', fill='tozeroy', name="Overall Sum", line=dict(color=SUM_LINE, width=2), fillcolor=SUM_FILL))
-                    fig_sum.add_vrect(x0=ev['start_time'], x1=ev['end_time'], fillcolor="rgba(220, 38, 38, 0.1)", line_width=1)
+                    
+                    # Scan for overlapping zero-flow events across ALL selected boilers to highlight on the summary chart
+                    overlapping_events = events_df[events_df['boiler'].isin(target_boilers) & (events_df['start_time'] <= ev['window_end']) & (events_df['end_time'] >= ev['window_start'])]
+                    for _, b_ev in overlapping_events.iterrows():
+                        fig_sum.add_vrect(x0=b_ev['start_time'], x1=b_ev['end_time'], fillcolor="rgba(220, 38, 38, 0.15)", line_width=0)
+                        
                     fig_sum.update_layout(title=f"Date: {sel_date}", template="plotly_white", hovermode="x unified", height=350, margin=dict(t=40, b=50))
                     fig_sum = set_legend_bottom(fig_sum)
                     st.plotly_chart(fig_sum, use_container_width=True)
@@ -368,7 +372,12 @@ elif app_mode == "Boiler operation and Flow":
                             if len(target_params) == 2:
                                 m2 = find_matching_param(b_df.columns, target_params[1])
                                 if m2: fig.add_trace(go.Scatter(x=w_df['timestamp'], y=pd.to_numeric(w_df[m2], errors='coerce'), name=m2, line=dict(color=SEC_COLOR, width=2, dash='dot')), secondary_y=True)
-                            fig.add_vrect(x0=ev['start_time'], x1=ev['end_time'], fillcolor="rgba(220, 38, 38, 0.15)", line_width=0)
+                            
+                            # Highlight only THIS specific boiler's events
+                            b_events = events_df[(events_df['boiler'] == b_name) & (events_df['start_time'] <= ev['window_end']) & (events_df['end_time'] >= ev['window_start'])]
+                            for _, b_ev in b_events.iterrows():
+                                fig.add_vrect(x0=b_ev['start_time'], x1=b_ev['end_time'], fillcolor="rgba(220, 38, 38, 0.15)", line_width=0)
+                                
                             fig.update_layout(title=f"{b_name} Analysis | Date: {sel_date}", template="plotly_white", hovermode="x unified", height=350, margin=dict(t=40, b=50))
                             fig = set_legend_bottom(fig)
                             st.plotly_chart(fig, use_container_width=True)
@@ -379,7 +388,11 @@ elif app_mode == "Boiler operation and Flow":
                                 if m_param:
                                     c_color = MULTI_COLORS[idx % len(MULTI_COLORS)]
                                     fig_multi.add_trace(go.Scatter(x=w_df['timestamp'], y=pd.to_numeric(w_df[m_param], errors='coerce'), name=m_param, line=dict(color=c_color)), row=idx+1, col=1)
-                            fig_multi.add_vrect(x0=ev['start_time'], x1=ev['end_time'], fillcolor="rgba(220, 38, 38, 0.15)", line_width=0)
+                                    
+                            b_events = events_df[(events_df['boiler'] == b_name) & (events_df['start_time'] <= ev['window_end']) & (events_df['end_time'] >= ev['window_start'])]
+                            for _, b_ev in b_events.iterrows():
+                                fig_multi.add_vrect(x0=b_ev['start_time'], x1=b_ev['end_time'], fillcolor="rgba(220, 38, 38, 0.15)", line_width=0)
+                                
                             fig_multi.update_layout(title=f"{b_name} Multi-Metric Analysis | Date: {sel_date}", template="plotly_white", hovermode="x unified", height=200*len(target_params), margin=dict(t=40, b=50))
                             fig_multi = set_legend_bottom(fig_multi)
                             st.plotly_chart(fig_multi, use_container_width=True)
@@ -397,12 +410,14 @@ elif app_mode == "Boiler operation and Flow":
             c_shift, c_date = st.columns(2)
             preset_shift = c_shift.selectbox("Analysis Window", ["Full Day", "Shift A", "Shift B", "Shift C", "Custom Date Range"], key="za_shift")
             
+            show_timeline_za = True
             if preset_shift == "Custom Date Range":
                 dr1, dr2 = st.columns(2)
                 start_d = dr1.date_input("Start Date", value=min_date, min_value=min_date, max_value=max_date, key="za_start_d")
                 end_d = dr2.date_input("End Date", value=max_date, min_value=min_date, max_value=max_date, key="za_end_d")
                 start_t = datetime.combine(start_d, time(0, 0))
                 end_t = datetime.combine(end_d, time(23, 59))
+                show_timeline_za = False
             else:
                 t_date_a = c_date.date_input("Target Date", value=min_date, min_value=min_date, max_value=max_date, key="za_date")
                 if preset_shift == "Shift A":
@@ -426,7 +441,7 @@ elif app_mode == "Boiler operation and Flow":
             sum_df = pd.DataFrame()
             node_df = pd.DataFrame()
             
-            # Single Axis Graphs for 1:1 comparison
+            # Single Axis Graphs for 1:1 scale comparison
             fig1 = go.Figure()
             fig2 = go.Figure()
             
@@ -458,15 +473,16 @@ elif app_mode == "Boiler operation and Flow":
                 sum_df['Total'] = sum_df.sum(axis=1)
                 fig1.add_trace(go.Scatter(x=sum_df.index, y=sum_df['Total'], name=f"Total Aggregated Flow ({p_main})", line=dict(color=SUM_LINE, width=3)))
 
-            st.markdown("#### Total Aggregate Flow vs Reference Meter (Same Axis)")
-            fig1.update_layout(template="plotly_white", hovermode="x unified", height=450, margin=dict(t=10, b=50))
-            fig1 = set_legend_bottom(fig1)
-            st.plotly_chart(fig1, use_container_width=True)
-            
-            st.markdown("#### Individual Boiler Flows vs Reference Meter (Same Axis)")
-            fig2.update_layout(template="plotly_white", hovermode="x unified", height=450, margin=dict(t=10, b=50))
-            fig2 = set_legend_bottom(fig2)
-            st.plotly_chart(fig2, use_container_width=True)
+            if show_timeline_za:
+                st.markdown("#### Total Aggregate Flow vs Reference Meter (Same Axis)")
+                fig1.update_layout(template="plotly_white", hovermode="x unified", height=450, margin=dict(t=10, b=50))
+                fig1 = set_legend_bottom(fig1)
+                st.plotly_chart(fig1, use_container_width=True)
+                
+                st.markdown("#### Individual Boiler Flows vs Reference Meter (Same Axis)")
+                fig2.update_layout(template="plotly_white", hovermode="x unified", height=450, margin=dict(t=10, b=50))
+                fig2 = set_legend_bottom(fig2)
+                st.plotly_chart(fig2, use_container_width=True)
 
 # ==============================================================================
 # 2. LOADING PATTERN
@@ -572,7 +588,6 @@ elif app_mode == "Loading pattern":
                     fig_multi = set_legend_bottom(fig_multi)
                     st.plotly_chart(fig_multi, use_container_width=True)
 
-        # 4th Graph: Total Flow vs Header Pressure
         if not sum_flow_df.empty and not header_press_df.empty:
             st.markdown("---")
             st.markdown("### Total Plant Load vs Header Pressure")
@@ -658,7 +673,6 @@ elif app_mode == "Statistical & Scatter Analysis":
                     b_stats[f"Avg {p}"] = stats_df_o2[f'{mc}_Num'].mean()
                     b_stats[f"Max {p}"] = stats_df_o2[f'{mc}_Num'].max()
                     
-                    # 1D Standard Deviation / Density Line
                     counts, bins = np.histogram(stats_df_o2[f'{mc}_Num'], bins=30, density=True)
                     bin_centers = 0.5 * (bins[:-1] + bins[1:])
                     dist_figs[p].add_trace(go.Scatter(x=bin_centers, y=counts, mode='lines', name=b_name, line=dict(color=B_COLORS.get(b_name), width=2), fill='tozeroy', fillcolor=B_COLORS.get(b_name).replace(')', ', 0.2)').replace('rgb', 'rgba') if 'rgb' in B_COLORS.get(b_name) else None))
@@ -700,11 +714,9 @@ elif app_mode == "Statistical & Scatter Analysis":
         
         if generate_scatter:
             st.markdown("#### 2D Scatter Correlation (All Selected Boilers)")
-            fig_scat.update_layout(title="Aggregated Scatter Plot", xaxis_title=target_params[0], yaxis_title=target_params[1], template="plotly_white", height=500, margin=dict(t=40, b=50))
+            fig_scat.update_layout(xaxis_title=target_params[0], yaxis_title=target_params[1], template="plotly_white", height=500, margin=dict(t=40, b=50))
             fig_scat = set_legend_bottom(fig_scat)
             st.plotly_chart(fig_scat, use_container_width=True)
-        else:
-            st.info("💡 Select exactly 2 parameters to unlock the Unified Scatterplot and 3D Density Map.")
         
         st.markdown("#### Standard Deviation Distributions (Line Density)")
         d_cols = st.columns(2)
@@ -783,7 +795,6 @@ elif app_mode == "System Cross-Analysis":
                     fig_eff = set_legend_bottom(fig_eff)
                     st.plotly_chart(fig_eff, use_container_width=True)
                     
-                    # Store data for the single unified scatterplot later
                     fig_scat_all.add_trace(go.Scattergl(
                         x=pd.to_numeric(w_df[valid_cols[0]], errors='coerce'), 
                         y=pd.to_numeric(w_df[valid_cols[1]], errors='coerce'), 
@@ -811,14 +822,12 @@ elif app_mode == "System Cross-Analysis":
                     
     st.markdown("---")
     
-    # 1st Graph: Unified Overlay
     if fig_multi.data:
         st.markdown(f"#### Multi-Parameter Overlay Timeline")
         fig_multi.update_layout(title=f"Date: {start_t.date()}", template="plotly_white", hovermode="x unified", height=500, margin=dict(t=40, b=50))
         fig_multi = set_legend_bottom(fig_multi)
         st.plotly_chart(fig_multi, use_container_width=True)
 
-    # 2nd Graph: Unified Scatter
     if fig_scat_all is not None:
         st.markdown(f"#### Unified Scatter Comparison ({target_params[0]} vs {target_params[1]})")
         fig_scat_all.update_layout(xaxis_title=target_params[0], yaxis_title=target_params[1], template="plotly_white", height=500, margin=dict(t=40, b=50))
@@ -826,11 +835,21 @@ elif app_mode == "System Cross-Analysis":
         st.plotly_chart(fig_scat_all, use_container_width=True)
 
 # ==============================================================================
-# 5. PARAMETER CORRELATION MATRIX (ANIMATED PRE-RENDER & TRENDING)
+# 5. PARAMETER CORRELATION MATRIX 
 # ==============================================================================
 elif app_mode == "Parameter Correlation Matrix":
     st.title("Parameter Correlation Matrix")
     
+    target_heatmap_keywords = ['boiler pressure', 'steam flow meter', 'boiler capacity', 'furnace pressure', 'oxygen', 'eco inlet temp', 'deaerator level', 'deaerator temperature', 'fuel feeding screw', 'rotary feeder screw', 'eco outlet temp', 'pa flash temp', 'fw eco ol temperature']
+    
+    # Establish common trackable columns before loop for Unified Trendline
+    common_cols = []
+    if list(cache.keys()):
+        b_df = cache[list(cache.keys())[0]]
+        for kw in target_heatmap_keywords:
+            m_col = find_matching_param(b_df.columns, kw)
+            if m_col and m_col not in common_cols: common_cols.append(m_col)
+
     with st.expander("Analysis Configuration", expanded=True):
         col1, col2 = st.columns([1.5, 1.5])
         target_boilers = col1.multiselect("Select Boiler(s)", list(cache.keys()), default=[list(cache.keys())[0]], key="corr_boilers")
@@ -855,8 +874,13 @@ elif app_mode == "Parameter Correlation Matrix":
             tl_end = d2.date_input("Animation End Date", value=max_date, min_value=min_date, max_value=max_date)
             if tl_end < tl_start: st.error("End Date must be after Start Date"); st.stop()
             if (tl_end - tl_start).days > 60: st.warning("Range too large for animation memory (Max 60 days)."); st.stop()
+            
+            st.markdown("#### Configure Trend Tracking")
+            c_tr1, c_tr2 = st.columns(2)
+            trace_p1 = c_tr1.selectbox("Metric 1 to track over time:", options=common_cols, index=0)
+            trace_p2 = c_tr2.selectbox("Metric 2 to track over time:", options=common_cols, index=min(1, len(common_cols)-1) if common_cols else 0)
 
-    target_heatmap_keywords = ['boiler pressure', 'steam flow meter', 'boiler capacity', 'furnace pressure', 'oxygen', 'eco inlet temp', 'deaerator level', 'deaerator temperature', 'fuel feeding screw', 'rotary feeder screw', 'eco outlet temp', 'pa flash temp', 'fw eco ol temperature']
+    unified_trend_data = {}
 
     for target_boiler in target_boilers:
         st.markdown("---")
@@ -891,13 +915,7 @@ elif app_mode == "Parameter Correlation Matrix":
                     st.warning("No data available for this shift.")
                     
             else: 
-                # Cinematic Time-Lapse & Delta Tracking
-                st.markdown(f"#### Dynamic Correlation Shift: {target_boiler}")
-                
-                c_trace1, c_trace2 = st.columns(2)
-                trace_p1 = c_trace1.selectbox("Metric 1 to track over time:", options=cols_to_keep, index=0, key=f"tr1_{target_boiler}")
-                trace_p2 = c_trace2.selectbox("Metric 2 to track over time:", options=cols_to_keep, index=min(1, len(cols_to_keep)-1), key=f"tr2_{target_boiler}")
-                
+                st.markdown(f"#### Dynamic Correlation Map: {target_boiler}")
                 frames = []
                 slider_steps = []
                 trend_dates = []
@@ -930,12 +948,11 @@ elif app_mode == "Parameter Correlation Matrix":
                             })
                     current_d += timedelta(days=1)
                     
+                if trend_dates:
+                    unified_trend_data[target_boiler] = {'dates': trend_dates, 'corrs': trend_corrs}
+                    
                 if frames and first_z is not None:
-                    # 1. Animation Matrix
-                    fig_anim = go.Figure(
-                        data=[go.Heatmap(z=first_z, x=valid_cols, y=valid_cols, colorscale='RdBu_r', zmin=-1, zmax=1)],
-                        frames=frames
-                    )
+                    fig_anim = go.Figure(data=[go.Heatmap(z=first_z, x=valid_cols, y=valid_cols, colorscale='RdBu_r', zmin=-1, zmax=1)], frames=frames)
                     fig_anim.update_layout(
                         template="plotly_white", height=700, margin=dict(t=40, b=150, l=150), xaxis=dict(tickangle=45),
                         updatemenus=[dict(
@@ -954,22 +971,24 @@ elif app_mode == "Parameter Correlation Matrix":
                         )]
                     )
                     st.plotly_chart(fig_anim, use_container_width=True)
-                    
-                    # 2. Magnitude / Drift Tracker
-                    st.markdown(f"#### Correlation Magnitude Tracker: {trace_p1} vs {trace_p2}")
-                    if trend_dates:
-                        fig_trend = go.Figure()
-                        fig_trend.add_trace(go.Scatter(x=trend_dates, y=trend_corrs, mode='lines+markers', line=dict(color='#ff7f0e', width=3), marker=dict(size=8)))
-                        fig_trend.update_layout(
-                            template="plotly_white", height=300, hovermode="x unified",
-                            yaxis=dict(title="Pearson Correlation (r)", range=[-1, 1]),
-                            margin=dict(t=10, b=40)
-                        )
-                        fig_trend.add_hline(y=0, line_dash="dot", line_color="black")
-                        st.plotly_chart(fig_trend, use_container_width=True)
-                        st.info("📉 **Insight:** Use this trendline to spot exactly when mechanical degradation or operational shifts altered the relationship between these two parameters.")
                 else:
                     st.warning("Could not calculate enough correlation frames for the selected date range.")
+                    
+    if analysis_mode == "Cinematic Time-Lapse Animation" and unified_trend_data:
+        st.markdown("---")
+        st.markdown(f"#### Unified Correlation Magnitude Tracker: {trace_p1} vs {trace_p2}")
+        fig_trend = go.Figure()
+        for b_name, t_data in unified_trend_data.items():
+            fig_trend.add_trace(go.Scatter(x=t_data['dates'], y=t_data['corrs'], mode='lines+markers', name=b_name, line=dict(color=B_COLORS.get(b_name, '#ff7f0e'), width=3), marker=dict(size=8)))
+        fig_trend.update_layout(
+            template="plotly_white", height=400, hovermode="x unified",
+            yaxis=dict(title="Pearson Correlation (r)", range=[-1.1, 1.1]),
+            margin=dict(t=10, b=40)
+        )
+        fig_trend.add_hline(y=0, line_dash="dot", line_color="black")
+        fig_trend = set_legend_bottom(fig_trend)
+        st.plotly_chart(fig_trend, use_container_width=True)
+        st.info("📉 **Insight:** Use this trendline to spot exactly when mechanical degradation or operational shifts altered the relationship between these two parameters.")
 
 # ==============================================================================
 # 6. MASS & ENERGY BALANCE (SANKEY)
@@ -980,7 +999,6 @@ elif app_mode == "Mass & Energy Balance":
     col1, col2 = st.columns([1, 1.5])
     analysis_type = col1.radio("Balance Type", ["Mass Balance (Tons)", "Energy Balance (kCal)"], horizontal=True)
     
-    # Base configuration dataset
     default_sankey_data = [
         {"Source": "Feed Water", "Value": 598461, "Target": "Steam Generation"},
         {"Source": "Feed Water", "Value": 21731, "Target": "Blowdown"},
@@ -1007,21 +1025,17 @@ elif app_mode == "Mass & Energy Balance":
         st.session_state.sankey_df = pd.DataFrame(default_sankey_data)
         
     st.markdown("### Interactive Parameter Editor")
-    st.info("💡 Add, edit, or delete rows directly in the table below. The Sankey diagram will instantly rebuild.")
+    st.info("💡 Add, edit, or delete rows directly in the table below. By allowing Plotly to handle layout natively, nodes space evenly left-to-right.")
     
-    # Interactive Table Editor
     edited_df = st.data_editor(st.session_state.sankey_df, num_rows="dynamic", use_container_width=True, height=300)
     st.session_state.sankey_df = edited_df
 
     st.markdown("---")
     
     if not edited_df.empty:
-        # Download Button
         csv = edited_df.to_csv(index=False).encode('utf-8')
         st.download_button(label="📥 Download Data Table (CSV)", data=csv, file_name='sankey_balance.csv', mime='text/csv')
         
-        # Build Sankey without strictly enforcing nodes into hard X/Y coordinates
-        # By removing forced coordinates, Plotly automatically optimizes left-to-right cascades like SankeyMATIC
         nodes = []
         for src in edited_df['Source'].dropna().astype(str):
             if src not in nodes: nodes.append(src)
@@ -1032,17 +1046,15 @@ elif app_mode == "Mass & Energy Balance":
         links_tgt = [nodes.index(str(tgt)) for tgt in edited_df['Target'].dropna()]
         links_val = pd.to_numeric(edited_df['Value'].dropna(), errors='coerce').fillna(0).tolist()
         
-        # Color palettes matching reference image style
         node_colors = ['#e377c2', '#7f7f7f', '#bcbd22', '#17becf', '#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd', '#8c564b']
         dynamic_node_colors = [node_colors[i % len(node_colors)] for i in range(len(nodes))]
-        
-        # Make link colors transparent versions of their source node colors
         link_colors = [dynamic_node_colors[src].replace('rgb', 'rgba').replace(')', ', 0.4)') if 'rgb' in dynamic_node_colors[src] else 'rgba(180, 180, 180, 0.4)' for src in links_src]
 
+        # Removed forced x/y depth plotting to allow Plotly native node sorting (SankeyMATIC style auto-layout)
         fig_sankey = go.Figure(data=[go.Sankey(
             node = dict(
-                pad = 25,
-                thickness = 25,
+                pad = 30,
+                thickness = 40,
                 line = dict(color = "black", width = 0.5),
                 label = nodes,
                 color = dynamic_node_colors
