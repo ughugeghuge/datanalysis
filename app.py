@@ -12,7 +12,7 @@ warnings.filterwarnings('ignore')
 st.set_page_config(page_title="Boiler Analytics Platform", layout="wide", initial_sidebar_state="expanded")
 
 # ==============================================================================
-# UI/UX: PREMIUM APPLE-STYLE SIDEBAR NAVIGATION CSS
+# UI/UX: PREMIUM APPLE-STYLE SIDEBAR NAVIGATION CSS (LEFT-ALIGNED & GAPLESS)
 # ==============================================================================
 st.markdown("""
 <style>
@@ -23,7 +23,7 @@ st.markdown("""
 
 /* Radio Group Container - Flush & Gapless */
 [data-testid="stSidebar"] div[role="radiogroup"] {
-    gap: 0px !important; /* Forces zero gap between items */
+    gap: 0px !important; 
     display: flex !important;
     flex-direction: column !important;
     width: 100% !important;
@@ -42,7 +42,7 @@ st.markdown("""
     width: 100% !important;
     padding: 14px 16px !important;
     margin: 0px !important;
-    border-radius: 0px !important; /* Flat edges for seamless stack */
+    border-radius: 0px !important; 
     background-color: transparent !important;
     border: none !important;
     cursor: pointer;
@@ -164,6 +164,7 @@ B_COLORS = {
 SEC_COLOR = '#7f7f7f'       
 SUM_LINE = '#d62728'        
 SUM_FILL = 'rgba(214, 39, 40, 0.15)' 
+MULTI_COLORS = ['#1f77b4', '#d62728', '#2ca02c', '#ff7f0e', '#9467bd', '#8c564b', '#e377c2', '#7f7f7f', '#bcbd22', '#17becf']
 
 # ==============================================================================
 # DATA PROCESSING & CACHING
@@ -367,7 +368,7 @@ if all_params:
 app_mode = st.sidebar.radio("Navigation", [
     "Boiler operation and Flow",
     "Loading pattern",
-    "Steam flow vs oxygen variation",
+    "Statistical & Scatter Analysis",
     "System Cross-Analysis",
     "Parameter Correlation Matrix",
     "Data Management"
@@ -592,7 +593,7 @@ elif app_mode == "Loading pattern":
         st.plotly_chart(fig_exp, use_container_width=True)
 
         st.markdown("---")
-        st.markdown("### Steam Flow vs Boiler Pressure Analysis")
+        st.markdown("### Secondary Analysis Overlays")
         for b_name in target_boilers:
             if b_name not in cache: continue
             b_df = cache[b_name]
@@ -620,10 +621,10 @@ elif app_mode == "Loading pattern":
                 st.plotly_chart(fig_dual, use_container_width=True)
 
 # ==============================================================================
-# 3. STEAM FLOW VS OXYGEN VARIATION
+# 3. STATISTICAL & SCATTER ANALYSIS (FULLY DYNAMIC)
 # ==============================================================================
-elif app_mode == "Steam flow vs oxygen variation":
-    st.title("Steam flow vs oxygen variation")
+elif app_mode == "Statistical & Scatter Analysis":
+    st.title("Statistical & Scatter Analysis")
     
     with st.expander("Analysis Configuration", expanded=True):
         col1, col2 = st.columns([1, 1.5])
@@ -665,9 +666,9 @@ elif app_mode == "Steam flow vs oxygen variation":
                 end_t = datetime.combine(target_o2_date, custom_tr[1])
 
         col4, col5, col6 = st.columns([2, 2, 1])
-        flow_col_sel = col4.selectbox("X-Axis (Flow Metric)", options=all_params, index=default_flow_idx, key="o2_x")
-        o2_col_sel = col5.selectbox("Y-Axis (Oxygen Metric)", options=all_params, index=default_o2_idx, key="o2_y")
-        op_threshold = col6.number_input("Active Boiler Threshold (Flow >)", value=1.0, step=0.5, help="Filters out shutdowns to reveal true operating stats.")
+        flow_col_sel = col4.selectbox("X-Axis (Primary Metric)", options=all_params, index=default_flow_idx, key="o2_x")
+        o2_col_sel = col5.selectbox("Y-Axis (Secondary Metric)", options=all_params, index=default_o2_idx, key="o2_y")
+        op_threshold = col6.number_input("Active Threshold (X-Axis >)", value=1.0, step=0.5, help="Filters out shutdowns to reveal true operating stats.")
     
     if target_boilers:
         fig_scat = go.Figure()
@@ -755,7 +756,7 @@ elif app_mode == "Steam flow vs oxygen variation":
             else:
                 st.info("💡 Timelines are intentionally hidden in 'Custom Date Range' to prevent browser lag. Scroll down for aggregated plots.")
             
-            st.markdown("#### 2D Scatter Correlation")
+            st.markdown(f"#### 2D Scatter Correlation ({flow_col_sel} vs {o2_col_sel})")
             fig_scat.update_layout(title=f"Date: {start_t.date()}", xaxis_title=flow_col_sel, yaxis_title=o2_col_sel, template="plotly_white", height=450, margin=dict(t=40, b=50))
             fig_scat = set_legend_bottom(fig_scat)
             st.plotly_chart(fig_scat, use_container_width=True)
@@ -772,24 +773,24 @@ elif app_mode == "Steam flow vs oxygen variation":
             d_col2.plotly_chart(fig_dist_o2, use_container_width=True)
             
             if pooled_flow and pooled_o2:
-                st.markdown("#### 3D Bivariate Density Map (Flow vs Oxygen)")
+                st.markdown(f"#### 3D Bivariate Density Map ({flow_col_sel} vs {o2_col_sel})")
                 H, xedges, yedges = np.histogram2d(pooled_flow, pooled_o2, bins=30, density=True)
                 fig_3d.add_trace(go.Surface(z=H.T, x=xedges[:-1], y=yedges[:-1], colorscale='Viridis', opacity=0.9))
                 fig_3d.update_layout(
                     title=f"Date: {start_t.date()}",
-                    scene=dict(xaxis_title="Steam Flow", yaxis_title="Oxygen", zaxis_title="Probability Density", camera=dict(eye=dict(x=1.5, y=-1.5, z=1.2))),
+                    scene=dict(xaxis_title=flow_col_sel, yaxis_title=o2_col_sel, zaxis_title="Probability Density", camera=dict(eye=dict(x=1.5, y=-1.5, z=1.2))),
                     height=600, margin=dict(t=40, b=50)
                 )
-                st.plotly_chart(fig_3d, use_container_width=True, config={'scrollZoom': False})
+                st.plotly_chart(fig_3d, use_container_width=True, config={'scrollZoom': False})[cite: 16]
         else:
             st.warning("No valid overlapping data points found.")
 
 # ==============================================================================
-# 4. SYSTEM CROSS-ANALYSIS (DYNAMIC)
+# 4. SYSTEM CROSS-ANALYSIS (DYNAMIC MULTI-PARAMETER)
 # ==============================================================================
 elif app_mode == "System Cross-Analysis":
     st.title("System Cross-Analysis")
-    st.markdown("Select any two parameters across the boiler system to discover deep mechanical and operational correlations.")
+    st.markdown("Select **multiple parameters** across the boiler system to discover deep mechanical correlations. If you select exactly 2 parameters, a scatterplot will also be generated.")
     
     with st.expander("Analysis Configuration", expanded=True):
         col1, col2 = st.columns([1, 1.5])
@@ -816,11 +817,9 @@ elif app_mode == "System Cross-Analysis":
             start_t = datetime.combine(target_crs_date, time(0, 0))
             end_t = datetime.combine(target_crs_date, time(23, 59))
 
-        col3, col4 = st.columns(2)
-        cross_p1 = col3.selectbox("Primary Metric (Y1)", options=all_params, index=default_flow_idx, key="crs_p1")
-        cross_p2 = col4.selectbox("Secondary Metric (Y2)", options=all_params, index=default_press_idx, key="crs_p2")
+        target_params = st.multiselect("Select Parameters to Cross-Analyze", options=all_params, default=[all_params[default_flow_idx], all_params[default_press_idx]], key="crs_params")
 
-    if not target_boilers:
+    if not target_boilers or not target_params:
         st.stop()
 
     for target_boiler in target_boilers:
@@ -829,22 +828,57 @@ elif app_mode == "System Cross-Analysis":
             w_df = b_df[(b_df['timestamp'] >= start_t) & (b_df['timestamp'] <= end_t)].copy()
             
             if not w_df.empty:
-                col_y1 = find_matching_param(w_df.columns, cross_p1)
-                col_y2 = find_matching_param(w_df.columns, cross_p2)
+                valid_cols = []
+                for p in target_params:
+                    match = find_matching_param(w_df.columns, p)
+                    if match: valid_cols.append(match)
                 
-                if col_y1 and col_y2:
-                    st.markdown(f"#### {target_boiler}: {col_y1} vs {col_y2}")
+                if len(valid_cols) == 1:
+                    st.markdown(f"#### {target_boiler}: Timeline ({valid_cols[0]})")
+                    fig_eff = go.Figure()
+                    fig_eff.add_trace(go.Scatter(x=w_df['timestamp'], y=pd.to_numeric(w_df[valid_cols[0]], errors='coerce'), name=valid_cols[0], line=dict(color=B_COLORS.get(target_boiler))))
+                    fig_eff.update_layout(title=f"Date: {start_t.date()}", template="plotly_white", hovermode="x unified", height=400, margin=dict(t=40, b=50))
+                    fig_eff = set_legend_bottom(fig_eff)
+                    st.plotly_chart(fig_eff, use_container_width=True)
+
+                elif len(valid_cols) == 2:
+                    st.markdown(f"#### {target_boiler}: {valid_cols[0]} vs {valid_cols[1]}")
                     fig_eff = make_subplots(specs=[[{"secondary_y": True}]])
-                    fig_eff.add_trace(go.Scatter(x=w_df['timestamp'], y=pd.to_numeric(w_df[col_y1], errors='coerce'), name=col_y1, line=dict(color=B_COLORS.get(target_boiler))), secondary_y=False)
-                    fig_eff.add_trace(go.Scatter(x=w_df['timestamp'], y=pd.to_numeric(w_df[col_y2], errors='coerce'), name=col_y2, line=dict(color='#d62728', dash='dot')), secondary_y=True)
+                    fig_eff.add_trace(go.Scatter(x=w_df['timestamp'], y=pd.to_numeric(w_df[valid_cols[0]], errors='coerce'), name=valid_cols[0], line=dict(color=B_COLORS.get(target_boiler))), secondary_y=False)
+                    fig_eff.add_trace(go.Scatter(x=w_df['timestamp'], y=pd.to_numeric(w_df[valid_cols[1]], errors='coerce'), name=valid_cols[1], line=dict(color='#d62728', dash='dot')), secondary_y=True)
                     fig_eff.update_layout(title=f"Date: {start_t.date()}", template="plotly_white", hovermode="x unified", height=400, margin=dict(t=40, b=50))
                     fig_eff = set_legend_bottom(fig_eff)
                     st.plotly_chart(fig_eff, use_container_width=True)
                     
+                    st.markdown(f"#### 2D Scatter Correlation")
+                    fig_scat = go.Figure(data=go.Scattergl(
+                        x=pd.to_numeric(w_df[valid_cols[0]], errors='coerce'), 
+                        y=pd.to_numeric(w_df[valid_cols[1]], errors='coerce'), 
+                        mode='markers', name=target_boiler,
+                        marker=dict(color=B_COLORS.get(target_boiler), size=6, opacity=0.6)
+                    ))
+                    fig_scat.update_layout(xaxis_title=valid_cols[0], yaxis_title=valid_cols[1], template="plotly_white", height=450, margin=dict(t=40, b=50))
+                    fig_scat = set_legend_bottom(fig_scat)
+                    st.plotly_chart(fig_scat, use_container_width=True)
+
+                elif len(valid_cols) > 2:
+                    st.markdown(f"#### {target_boiler}: Multi-Parameter Cross Analysis")
+                    fig_multi = make_subplots(rows=len(valid_cols), cols=1, shared_xaxes=True, vertical_spacing=0.05, subplot_titles=valid_cols)
+                    for idx, c_name in enumerate(valid_cols):
+                        c_color = MULTI_COLORS[idx % len(MULTI_COLORS)]
+                        fig_multi.add_trace(go.Scatter(x=w_df['timestamp'], y=pd.to_numeric(w_df[c_name], errors='coerce'), name=c_name, line=dict(color=c_color)), row=idx+1, col=1)
+                    
+                    # Dynamically calculate height based on number of plots
+                    dynamic_height = 200 * len(valid_cols)
+                    fig_multi.update_layout(title=f"Date: {start_t.date()}", template="plotly_white", hovermode="x unified", height=dynamic_height, margin=dict(t=60, b=50))
+                    fig_multi = set_legend_bottom(fig_multi)
+                    st.plotly_chart(fig_multi, use_container_width=True)
+                    st.info("💡 Select exactly 2 parameters if you wish to generate a Scatterplot correlation.")
+                    
             st.markdown("---")
 
 # ==============================================================================
-# 5. PARAMETER CORRELATION MATRIX
+# 5. PARAMETER CORRELATION MATRIX (TIME-LAPSE DYNAMICS)
 # ==============================================================================
 elif app_mode == "Parameter Correlation Matrix":
     st.title("Parameter Correlation Matrix")
@@ -852,27 +886,40 @@ elif app_mode == "Parameter Correlation Matrix":
     with st.expander("Analysis Configuration", expanded=True):
         col1, col2 = st.columns([1, 1.5])
         target_boilers = col1.multiselect("Select Boiler(s)", list(cache.keys()), default=[list(cache.keys())[0]], key="corr_boilers")
-        preset_shift = col2.selectbox("Analysis Window", [
-            "Full Day (00:00 - 23:59)", 
-            "Shift A (22:00 - 06:00)", 
-            "Shift B (06:00 - 14:00)", 
-            "Shift C (14:00 - 22:00)"
-        ], key="corr_preset")
         
-        target_corr_date = st.date_input("Target Date", value=min_date, min_value=min_date, max_value=max_date, key="corr_date")
+        analysis_mode = col2.radio("Analysis Mode", ["Single Fixed Window", "Daily Time-Lapse Slider (Scrubbing)"], horizontal=True)
         
-        if preset_shift == "Shift A (22:00 - 06:00)":
-            start_t = datetime.combine(target_corr_date - timedelta(days=1), time(22, 0))
-            end_t = datetime.combine(target_corr_date, time(6, 0))
-        elif preset_shift == "Shift B (06:00 - 14:00)":
-            start_t = datetime.combine(target_corr_date, time(6, 0))
-            end_t = datetime.combine(target_corr_date, time(14, 0))
-        elif preset_shift == "Shift C (14:00 - 22:00)":
-            start_t = datetime.combine(target_corr_date, time(14, 0))
-            end_t = datetime.combine(target_corr_date, time(22, 0))
-        else:
-            start_t = datetime.combine(target_corr_date, time(0, 0))
-            end_t = datetime.combine(target_corr_date, time(23, 59))
+        if analysis_mode == "Single Fixed Window":
+            preset_shift = st.selectbox("Analysis Window", [
+                "Full Day (00:00 - 23:59)", 
+                "Shift A (22:00 - 06:00)", 
+                "Shift B (06:00 - 14:00)", 
+                "Shift C (14:00 - 22:00)"
+            ], key="corr_preset")
+            target_corr_date = st.date_input("Target Date", value=min_date, min_value=min_date, max_value=max_date, key="corr_date")
+            
+            if preset_shift == "Shift A (22:00 - 06:00)":
+                start_t = datetime.combine(target_corr_date - timedelta(days=1), time(22, 0))
+                end_t = datetime.combine(target_corr_date, time(6, 0))
+            elif preset_shift == "Shift B (06:00 - 14:00)":
+                start_t = datetime.combine(target_corr_date, time(6, 0))
+                end_t = datetime.combine(target_corr_date, time(14, 0))
+            elif preset_shift == "Shift C (14:00 - 22:00)":
+                start_t = datetime.combine(target_corr_date, time(14, 0))
+                end_t = datetime.combine(target_corr_date, time(22, 0))
+            else:
+                start_t = datetime.combine(target_corr_date, time(0, 0))
+                end_t = datetime.combine(target_corr_date, time(23, 59))
+        
+        else: # Time-Lapse Scrubbing
+            d1, d2 = st.columns(2)
+            tl_start = d1.date_input("Start Date of Time-Lapse Range", value=min_date, min_value=min_date, max_value=max_date)
+            tl_end = d2.date_input("End Date of Time-Lapse Range", value=max_date, min_value=min_date, max_value=max_date)
+            
+            # Interactive Timeline Slider that triggers real-time recalculation
+            active_date = st.slider("Scrub through Date to render correlation shifts:", min_value=tl_start, max_value=tl_end, value=tl_start, format="YYYY-MM-DD")
+            start_t = datetime.combine(active_date, time(0, 0))
+            end_t = datetime.combine(active_date, time(23, 59))
 
     target_heatmap_keywords = [
         'boiler pressure', 'steam flow meter', 'boiler capacity', 'furnace pressure',
@@ -912,7 +959,7 @@ elif app_mode == "Parameter Correlation Matrix":
                     ))
                     
                     fig_corr.update_layout(
-                        title=f"Date: {start_t.date()}",
+                        title=f"Date Analyzed: {start_t.date()}",
                         template="plotly_white",
                         height=600,
                         margin=dict(t=40, b=150, l=150),
@@ -923,4 +970,4 @@ elif app_mode == "Parameter Correlation Matrix":
                 else:
                     st.warning(f"Not enough valid numeric data in {target_boiler} for the selected parameters to map correlations.")
             else:
-                st.warning(f"No targeted parameters found or no data available for {target_boiler} during this shift.")
+                st.warning(f"No targeted parameters found or no data available for {target_boiler} on this date.")
