@@ -12,129 +12,35 @@ warnings.filterwarnings('ignore')
 st.set_page_config(page_title="Boiler Analytics Platform", layout="wide", initial_sidebar_state="expanded")
 
 # ==============================================================================
-# UI/UX: PREMIUM APPLE-STYLE SIDEBAR NAVIGATION CSS
+# UI/UX: PREMIUM APPLE-STYLE SIDEBAR NAVIGATION CSS 
 # ==============================================================================
 st.markdown("""
 <style>
-[data-testid="stSidebar"] {
-    background-color: #fbfbfd;
-}
-[data-testid="stSidebar"] div[role="radiogroup"] {
-    gap: 0px !important; 
-    display: flex !important;
-    flex-direction: column !important;
-    width: 100% !important;
-    padding: 0px !important;
-}
-[data-testid="stSidebar"] div[role="radiogroup"] > div {
-    width: 100% !important;
-    margin: 0px !important;
-    padding: 0px !important;
-}
-[data-testid="stSidebar"] div[role="radiogroup"] label {
-    width: 100% !important;
-    padding: 14px 16px !important;
-    margin: 0px !important;
-    border-radius: 0px !important; 
-    background-color: transparent !important;
-    border: none !important;
-    cursor: pointer;
-    display: flex !important;
-    align-items: center !important;
-    justify-content: flex-start !important;
-    transition: background-color 0.2s ease;
-}
-[data-testid="stSidebar"] div[role="radiogroup"] > div:first-child label {
-    border-top-left-radius: 8px !important;
-    border-top-right-radius: 8px !important;
-}
-[data-testid="stSidebar"] div[role="radiogroup"] > div:nth-last-child(2) label {
-    border-bottom-left-radius: 8px !important;
-    border-bottom-right-radius: 8px !important;
-}
-[data-testid="stSidebar"] div[role="radiogroup"] label > div:first-child,
-[data-testid="stSidebar"] div[role="radiogroup"] label div[data-baseweb="radio"] {
-    display: none !important;
-    width: 0px !important;
-    height: 0px !important;
-    margin: 0px !important;
-    padding: 0px !important;
-    opacity: 0 !important;
-    visibility: hidden !important;
-}
-[data-testid="stSidebar"] div[role="radiogroup"] label div[data-testid="stMarkdownContainer"] {
-    display: flex !important;
-    width: 100% !important;
-    justify-content: flex-start !important;
-}
-[data-testid="stSidebar"] div[role="radiogroup"] label p {
-    margin: 0 !important;
-    font-size: 14.5px !important;
-    color: #1d1d1f !important;
-    font-weight: 500 !important;
-    text-align: left !important;
-    width: 100% !important;
-    position: relative;
-    z-index: 2;
-}
-[data-testid="stSidebar"] div[role="radiogroup"] label:hover {
-    background-color: #f0f0f5 !important;
-}
-[data-testid="stSidebar"] div[role="radiogroup"] label[data-checked="true"],
-[data-testid="stSidebar"] div[role="radiogroup"] label:has(input:checked) {
-    background-color: #0071e3 !important;
-    position: relative;
-    overflow: hidden;
-}
-[data-testid="stSidebar"] div[role="radiogroup"] label[data-checked="true"] p,
-[data-testid="stSidebar"] div[role="radiogroup"] label:has(input:checked) p {
-    color: #ffffff !important;
-    font-weight: 600 !important;
-    letter-spacing: 0.2px;
-}
-[data-testid="stSidebar"] div[role="radiogroup"] label[data-checked="true"]::before,
-[data-testid="stSidebar"] div[role="radiogroup"] label:has(input:checked)::before {
-    content: '';
-    position: absolute;
-    top: 0; left: -100%;
-    width: 50%; height: 100%;
-    background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.3), transparent);
-    animation: light-sweep 3s infinite cubic-bezier(0.4, 0, 0.2, 1);
-    z-index: 1;
-    pointer-events: none;
-}
-@keyframes light-sweep {
-    0% { left: -100%; }
-    50% { left: 200%; }
-    100% { left: 200%; }
-}
-[data-testid="stSidebar"] div[role="radiogroup"] > div:last-child {
-    margin-top: 60px !important;
-}
-[data-testid="stSidebar"] div[role="radiogroup"] > div:last-child label {
-    border-radius: 8px !important;
-    border: 1px solid #d2d2d7 !important;
-    background-color: #f5f5f7 !important;
-}
-[data-testid="stSidebar"] div[role="radiogroup"] > div:last-child label:hover {
-    background-color: #e8e8ed !important;
-}
-[data-testid="stSidebar"] div[role="radiogroup"] > div:last-child label[data-checked="true"],
-[data-testid="stSidebar"] div[role="radiogroup"] > div:last-child label:has(input:checked) {
-    background-color: #0071e3 !important;
-    border: 1px solid #0071e3 !important;
-}
+[data-testid="stSidebar"] { background-color: #fbfbfd; }
+[data-testid="stSidebar"] div[role="radiogroup"] { gap: 0px !important; display: flex !important; flex-direction: column !important; width: 100% !important; padding: 0px !important; }
+[data-testid="stSidebar"] div[role="radiogroup"] > div { width: 100% !important; margin: 0px !important; padding: 0px !important; }
+[data-testid="stSidebar"] div[role="radiogroup"] label { width: 100% !important; padding: 14px 16px !important; margin: 0px !important; border-radius: 0px !important; background-color: transparent !important; border: none !important; cursor: pointer; display: flex !important; align-items: center !important; justify-content: flex-start !important; transition: background-color 0.2s ease; }
+[data-testid="stSidebar"] div[role="radiogroup"] > div:first-child label { border-top-left-radius: 8px !important; border-top-right-radius: 8px !important; }
+[data-testid="stSidebar"] div[role="radiogroup"] > div:nth-last-child(2) label { border-bottom-left-radius: 8px !important; border-bottom-right-radius: 8px !important; }
+[data-testid="stSidebar"] div[role="radiogroup"] label > div:first-child, [data-testid="stSidebar"] div[role="radiogroup"] label div[data-baseweb="radio"] { display: none !important; width: 0px !important; height: 0px !important; margin: 0px !important; padding: 0px !important; opacity: 0 !important; visibility: hidden !important; }
+[data-testid="stSidebar"] div[role="radiogroup"] label div[data-testid="stMarkdownContainer"] { display: flex !important; width: 100% !important; justify-content: flex-start !important; }
+[data-testid="stSidebar"] div[role="radiogroup"] label p { margin: 0 !important; font-size: 14.5px !important; color: #1d1d1f !important; font-weight: 500 !important; text-align: left !important; width: 100% !important; position: relative; z-index: 2; }
+[data-testid="stSidebar"] div[role="radiogroup"] label:hover { background-color: #f0f0f5 !important; }
+[data-testid="stSidebar"] div[role="radiogroup"] label[data-checked="true"], [data-testid="stSidebar"] div[role="radiogroup"] label:has(input:checked) { background-color: #0071e3 !important; position: relative; overflow: hidden; }
+[data-testid="stSidebar"] div[role="radiogroup"] label[data-checked="true"] p, [data-testid="stSidebar"] div[role="radiogroup"] label:has(input:checked) p { color: #ffffff !important; font-weight: 600 !important; letter-spacing: 0.2px; }
+[data-testid="stSidebar"] div[role="radiogroup"] label[data-checked="true"]::before, [data-testid="stSidebar"] div[role="radiogroup"] label:has(input:checked)::before { content: ''; position: absolute; top: 0; left: -100%; width: 50%; height: 100%; background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.3), transparent); animation: light-sweep 3s infinite cubic-bezier(0.4, 0, 0.2, 1); z-index: 1; pointer-events: none; }
+@keyframes light-sweep { 0% { left: -100%; } 50% { left: 200%; } 100% { left: 200%; } }
+[data-testid="stSidebar"] div[role="radiogroup"] > div:last-child { margin-top: 60px !important; }
+[data-testid="stSidebar"] div[role="radiogroup"] > div:last-child label { border-radius: 8px !important; border: 1px solid #d2d2d7 !important; background-color: #f5f5f7 !important; }
+[data-testid="stSidebar"] div[role="radiogroup"] > div:last-child label:hover { background-color: #e8e8ed !important; }
+[data-testid="stSidebar"] div[role="radiogroup"] > div:last-child label[data-checked="true"], [data-testid="stSidebar"] div[role="radiogroup"] > div:last-child label:has(input:checked) { background-color: #0071e3 !important; border: 1px solid #0071e3 !important; }
 </style>
 """, unsafe_allow_html=True)
 
 # ==============================================================================
 # PROFESSIONAL LIGHT THEME COLORS
 # ==============================================================================
-B_COLORS = {
-    'Boiler 1': '#1f77b4',  
-    'Boiler 2': '#2ca02c',  
-    'Boiler 3': '#ff7f0e'   
-}
+B_COLORS = {'Boiler 1': '#1f77b4', 'Boiler 2': '#2ca02c', 'Boiler 3': '#ff7f0e'}
 MULTI_COLORS = ['#1f77b4', '#d62728', '#2ca02c', '#ff7f0e', '#9467bd', '#8c564b', '#e377c2', '#7f7f7f', '#bcbd22', '#17becf']
 SEC_COLOR = '#7f7f7f'       
 SUM_LINE = '#d62728'        
@@ -214,7 +120,6 @@ def process_local_files(data_dir='./boiler_data'):
                             df = clean_and_normalize_sheet(raw_sheet)
                             if not df.empty: df_list.append(df)
                     except Exception as e:
-                        # Zip fallback
                         if "zip" in str(e).lower() or "magic" in str(e).lower():
                             df = clean_and_normalize_sheet(pd.read_csv(target, header=None))
                             if not df.empty: df_list.append(df)
@@ -275,7 +180,7 @@ def find_matching_param(columns, target_param):
     for c in columns:
         col_clean = normalize_col(c)
         if target_clean in col_clean or col_clean in target_clean: return c
-    for kw in ['flow', 'steam', 'pressure', 'temperature', 'oxygen', 'level', 'feedwater']:
+    for kw in ['flow', 'steam', 'pressure', 'temperature', 'oxygen', 'level', 'feedwater', 'header']:
         if kw in target_clean:
             for c in columns:
                 if kw in normalize_col(c): return c
@@ -320,10 +225,13 @@ if all_params:
         p_lower = p.lower()
         if p_lower == 'steam flow meter': default_flow_idx = i
         elif ('steam flow' in p_lower or 'flow meter' in p_lower) and all_params[default_flow_idx].lower() != 'steam flow meter': default_flow_idx = i
+        
         if p_lower == 'steam flow meter a': flow_a_idx = i
         elif 'flow meter a' in p_lower: flow_a_idx = i
+            
         if p_lower == 'boiler pressure': default_press_idx = i
         elif ('boiler pressure' in p_lower or 'steam pressure' in p_lower) and all_params[default_press_idx].lower() != 'boiler pressure': default_press_idx = i
+        
         if 'oxygen' in p_lower or 'o2' in p_lower: default_o2_idx = i
 
 app_mode = st.sidebar.radio("Navigation", [
@@ -359,6 +267,7 @@ if app_mode == "Data Management":
         data_dir = Path('./boiler_data')
         data_dir.mkdir(parents=True, exist_ok=True)
         files_saved = 0
+        
         if b1_file:
             with open(data_dir / f"Boiler1_{b1_file.name}", "wb") as f: f.write(b1_file.getvalue())
             files_saved += 1
@@ -386,7 +295,7 @@ elif not cache:
 elif app_mode == "Boiler operation and Flow":
     st.title("Boiler Operation and Flow")
     
-    tab_custom, tab_a = st.tabs(["Custom Parameter Analysis", "Flow Meter Comparison (Total & Nodes)"])
+    tab_custom, tab_a = st.tabs(["Custom Parameter Analysis", "Steam Flow Meter A"])
     
     with tab_custom:
         with st.expander("Analysis Configuration", expanded=True):
@@ -422,8 +331,30 @@ elif app_mode == "Boiler operation and Flow":
                 cols[0].metric("Event Duration", f"{ev['duration_mins']:.1f} min")
                 for idx, (label, val) in enumerate(totals.items()):
                     cols[idx + 1].metric(f"{label} Loss/Gen", f"{val:.1f} Tons")
+
+                # Re-Added Total Aggregate Plot
+                st.markdown(f"#### Aggregate Factory Sum ({sel_param})")
+                sum_df = pd.DataFrame()
+                for b_name in target_boilers:
+                    if b_name not in cache: continue
+                    b_df = cache[b_name]
+                    m_param_found = find_matching_param(b_df.columns, sel_param)
+                    if m_param_found:
+                        w_df = b_df[(b_df['timestamp'] >= ev['window_start']) & (b_df['timestamp'] <= ev['window_end'])].copy()
+                        w_df = w_df.set_index('timestamp')[m_param_found]
+                        w_df = pd.to_numeric(w_df, errors='coerce').resample('1min').mean().interpolate(method='time')
+                        sum_df[b_name] = w_df
+
+                if not sum_df.empty:
+                    sum_df['Aggregate'] = sum_df.sum(axis=1)
+                    fig_sum = go.Figure()
+                    fig_sum.add_trace(go.Scatter(x=sum_df.index, y=sum_df['Aggregate'], mode='lines', fill='tozeroy', name="Overall Sum", line=dict(color=SUM_LINE, width=2), fillcolor=SUM_FILL))
+                    fig_sum.add_vrect(x0=ev['start_time'], x1=ev['end_time'], fillcolor="rgba(220, 38, 38, 0.1)", line_width=1)
+                    fig_sum.update_layout(title=f"Date: {sel_date}", template="plotly_white", hovermode="x unified", height=350, margin=dict(t=40, b=50))
+                    fig_sum = set_legend_bottom(fig_sum)
+                    st.plotly_chart(fig_sum, use_container_width=True)
     
-                st.markdown(f"#### Boiler Event Timelines")
+                st.markdown(f"#### Boiler Event Breakdowns")
                 for b_name in target_boilers:
                     if b_name not in cache: continue
                     b_df = cache[b_name]
@@ -438,7 +369,7 @@ elif app_mode == "Boiler operation and Flow":
                                 m2 = find_matching_param(b_df.columns, target_params[1])
                                 if m2: fig.add_trace(go.Scatter(x=w_df['timestamp'], y=pd.to_numeric(w_df[m2], errors='coerce'), name=m2, line=dict(color=SEC_COLOR, width=2, dash='dot')), secondary_y=True)
                             fig.add_vrect(x0=ev['start_time'], x1=ev['end_time'], fillcolor="rgba(220, 38, 38, 0.15)", line_width=0)
-                            fig.update_layout(title=f"{b_name} Breakdown | Date: {sel_date}", template="plotly_white", hovermode="x unified", height=350, margin=dict(t=40, b=50))
+                            fig.update_layout(title=f"{b_name} Analysis", template="plotly_white", hovermode="x unified", height=350, margin=dict(t=40, b=50))
                             fig = set_legend_bottom(fig)
                             st.plotly_chart(fig, use_container_width=True)
                         else:
@@ -449,18 +380,18 @@ elif app_mode == "Boiler operation and Flow":
                                     c_color = MULTI_COLORS[idx % len(MULTI_COLORS)]
                                     fig_multi.add_trace(go.Scatter(x=w_df['timestamp'], y=pd.to_numeric(w_df[m_param], errors='coerce'), name=m_param, line=dict(color=c_color)), row=idx+1, col=1)
                             fig_multi.add_vrect(x0=ev['start_time'], x1=ev['end_time'], fillcolor="rgba(220, 38, 38, 0.15)", line_width=0)
-                            fig_multi.update_layout(title=f"{b_name} Multi-Metric Breakdown | Date: {sel_date}", template="plotly_white", hovermode="x unified", height=200*len(target_params), margin=dict(t=40, b=50))
+                            fig_multi.update_layout(title=f"{b_name} Multi-Metric Analysis", template="plotly_white", hovermode="x unified", height=200*len(target_params), margin=dict(t=40, b=50))
                             fig_multi = set_legend_bottom(fig_multi)
                             st.plotly_chart(fig_multi, use_container_width=True)
                                 
     with tab_a:
-        st.markdown("### Aggregated Flow vs Node Comparison")
-        with st.expander("Node Setup", expanded=True):
+        st.markdown("### Steam Flow Meter A Analysis")
+        with st.expander("Analysis Setup", expanded=True):
             c_boilers, c_params = st.columns([1.5, 1.5])
             t_boilers_a = c_boilers.multiselect("Select Boilers to Aggregate (Total)", list(cache.keys()), default=list(cache.keys()), key="z_boilers_a")
             
-            p1 = c_params.selectbox("Primary Component (Aggregated Total)", options=all_params, index=default_flow_idx, key="za_p1")
-            p2 = c_params.selectbox("Secondary Component (Node)", options=all_params, index=flow_a_idx if flow_a_idx else 0, key="za_p2")
+            p1 = c_params.selectbox("Primary Component (Boiler Flows)", options=all_params, index=default_flow_idx, key="za_p1")
+            p2 = c_params.selectbox("Reference Component (Meter A)", options=all_params, index=flow_a_idx if flow_a_idx else 0, key="za_p2")
             
             t_date_a = st.date_input("Target Date", value=min_date, min_value=min_date, max_value=max_date, key="z_date_a")
         
@@ -473,9 +404,9 @@ elif app_mode == "Boiler operation and Flow":
         sum_df = pd.DataFrame()
         node_df = pd.DataFrame()
         
-        fig = make_subplots(specs=[[{"secondary_y": True}]])
+        fig1 = go.Figure()
+        fig2 = go.Figure()
         
-        # Plot Individual Boilers + Sum
         for b_name in t_boilers_a:
             if b_name not in cache: continue
             b_df = cache[b_name]
@@ -488,25 +419,32 @@ elif app_mode == "Boiler operation and Flow":
             if m1:
                 series = pd.to_numeric(w_df.set_index('timestamp')[m1], errors='coerce').resample('1min').mean().interpolate(method='time')
                 sum_df[b_name] = series
-                fig.add_trace(go.Scatter(x=series.index, y=series.values, name=f"{b_name} ({p1})", line=dict(color=B_COLORS.get(b_name), width=1)), secondary_y=False)
+                fig2.add_trace(go.Scatter(x=series.index, y=series.values, name=f"{b_name} ({p1})", line=dict(color=B_COLORS.get(b_name), width=1.5)))
             
-            # Usually the secondary node (like Meter A) is logged in one specific boiler dataset or all. We take average/sum depending on logic.
             if m2:
                 series2 = pd.to_numeric(w_df.set_index('timestamp')[m2], errors='coerce').resample('1min').mean().interpolate(method='time')
                 node_df[b_name] = series2
 
+        if not node_df.empty:
+            node_df['NodeAvg'] = node_df.mean(axis=1)
+            # Shared reference trace for both graphs
+            ref_trace = go.Scatter(x=node_df.index, y=node_df['NodeAvg'], name=f"Reference ({p2})", line=dict(color='#000000', width=2.5, dash='dot'))
+            fig1.add_trace(ref_trace)
+            fig2.add_trace(ref_trace)
+
         if not sum_df.empty:
             sum_df['Total'] = sum_df.sum(axis=1)
-            fig.add_trace(go.Scatter(x=sum_df.index, y=sum_df['Total'], name=f"Total Aggregated ({p1})", line=dict(color=SUM_LINE, width=3)), secondary_y=False)
-            
-        if not node_df.empty:
-            # Average the node reading if it appears in multiple sheets to prevent double counting
-            node_df['NodeAvg'] = node_df.mean(axis=1)
-            fig.add_trace(go.Scatter(x=node_df.index, y=node_df['NodeAvg'], name=f"Node Reading ({p2})", line=dict(color='#9467bd', width=3, dash='dot')), secondary_y=True)
+            fig1.add_trace(go.Scatter(x=sum_df.index, y=sum_df['Total'], name=f"Total Aggregated Flow", line=dict(color=SUM_LINE, width=3)))
 
-        fig.update_layout(title=f"Aggregated Boiler Flow vs Sub-Node | Date: {t_date_a}", template="plotly_white", hovermode="x unified", height=500, margin=dict(t=40, b=50))
-        fig = set_legend_bottom(fig)
-        st.plotly_chart(fig, use_container_width=True)
+        st.markdown("#### Total Aggregate vs Reference Meter (Same Axis)")
+        fig1.update_layout(template="plotly_white", hovermode="x unified", height=450, margin=dict(t=10, b=50))
+        fig1 = set_legend_bottom(fig1)
+        st.plotly_chart(fig1, use_container_width=True)
+        
+        st.markdown("#### Individual Boilers vs Reference Meter (Same Axis)")
+        fig2.update_layout(template="plotly_white", hovermode="x unified", height=450, margin=dict(t=10, b=50))
+        fig2 = set_legend_bottom(fig2)
+        st.plotly_chart(fig2, use_container_width=True)
 
 # ==============================================================================
 # 2. LOADING PATTERN
@@ -555,11 +493,44 @@ elif app_mode == "Loading pattern":
         start_dt = datetime.combine(explore_date, time_range[0])
         end_dt = datetime.combine(explore_date, time_range[1])
         
+        fig_exp = go.Figure()
+        sum_flow_df = pd.DataFrame()
+        header_press_df = pd.DataFrame()
+        
+        # We need to find header pressure dynamically for the 4th graph
+        h_press_col = next((c for c in all_params if 'header pressure' in c.lower()), None)
+        
         for b_name in target_boilers:
             if b_name not in cache: continue
             b_df = cache[b_name]
             w_df = b_df[(b_df['timestamp'] >= start_dt) & (b_df['timestamp'] <= end_dt)]
+            if w_df.empty: continue
             
+            # 1. Combined Primary Metric Line Chart
+            m_param_found = find_matching_param(b_df.columns, sel_param)
+            if m_param_found:
+                fig_exp.add_trace(go.Scatter(x=w_df['timestamp'], y=pd.to_numeric(w_df[m_param_found], errors='coerce'), mode='lines', name=f"{b_name} ({m_param_found})", line=dict(color=B_COLORS.get(b_name), width=1.5)))
+                # Collect for sum chart
+                sum_flow_df[b_name] = pd.to_numeric(w_df.set_index('timestamp')[m_param_found], errors='coerce').resample('1min').mean().interpolate()
+            
+            # Find header pressure (fallback to boiler pressure if not explicitly named)
+            if h_press_col:
+                m_h = find_matching_param(b_df.columns, h_press_col)
+                if m_h: header_press_df[b_name] = pd.to_numeric(w_df.set_index('timestamp')[m_h], errors='coerce').resample('1min').mean().interpolate()
+            else:
+                m_h = find_matching_param(b_df.columns, 'boiler pressure')
+                if m_h: header_press_df[b_name] = pd.to_numeric(w_df.set_index('timestamp')[m_h], errors='coerce').resample('1min').mean().interpolate()
+
+        fig_exp.update_layout(title=f"Combined Timeline: {sel_param} | Date: {explore_date}", template="plotly_white", hovermode="x unified", height=450, margin=dict(t=40, b=50))
+        fig_exp = set_legend_bottom(fig_exp)
+        st.plotly_chart(fig_exp, use_container_width=True)
+
+        st.markdown("---")
+        st.markdown("### Secondary Analysis Overlays")
+        for b_name in target_boilers:
+            if b_name not in cache: continue
+            b_df = cache[b_name]
+            w_df = b_df[(b_df['timestamp'] >= start_dt) & (b_df['timestamp'] <= end_dt)]
             if not w_df.empty:
                 if len(target_params) <= 2:
                     fig_dual = make_subplots(specs=[[{"secondary_y": True}]])
@@ -579,10 +550,25 @@ elif app_mode == "Loading pattern":
                         if m_param:
                             c_color = MULTI_COLORS[idx % len(MULTI_COLORS)]
                             fig_multi.add_trace(go.Scatter(x=w_df['timestamp'], y=pd.to_numeric(w_df[m_param], errors='coerce'), name=m_param, line=dict(color=c_color)), row=idx+1, col=1)
-                    
                     fig_multi.update_layout(title=f"{b_name} Multi-Metric Analysis | Date: {explore_date}", template="plotly_white", hovermode="x unified", height=200*len(target_params), margin=dict(t=40, b=50))
                     fig_multi = set_legend_bottom(fig_multi)
                     st.plotly_chart(fig_multi, use_container_width=True)
+
+        # 4th Graph: Total Flow vs Header Pressure
+        if not sum_flow_df.empty and not header_press_df.empty:
+            st.markdown("---")
+            st.markdown("### Total Plant Load vs Header Pressure")
+            fig_total = make_subplots(specs=[[{"secondary_y": True}]])
+            
+            sum_flow_df['Total'] = sum_flow_df.sum(axis=1)
+            header_press_df['Avg'] = header_press_df.mean(axis=1)
+            
+            fig_total.add_trace(go.Scatter(x=sum_flow_df.index, y=sum_flow_df['Total'], name="Aggregate Steam Flow", line=dict(color=SUM_LINE, width=2)), secondary_y=False)
+            fig_total.add_trace(go.Scatter(x=header_press_df.index, y=header_press_df['Avg'], name="Header Pressure", line=dict(color='#000000', width=2, dash='dot')), secondary_y=True)
+            
+            fig_total.update_layout(template="plotly_white", hovermode="x unified", height=400, margin=dict(t=10, b=50))
+            fig_total = set_legend_bottom(fig_total)
+            st.plotly_chart(fig_total, use_container_width=True)
 
 # ==============================================================================
 # 3. STATISTICAL & SCATTER ANALYSIS
@@ -597,9 +583,8 @@ elif app_mode == "Statistical & Scatter Analysis":
         
         if not target_params or not target_boilers: st.warning("Please select at least one boiler and one parameter."); st.stop()
         
-        c_shift, c_date, c_thresh = st.columns([1, 1, 1])
+        c_shift, c_date = st.columns([1, 1])
         preset_shift = c_shift.selectbox("Analysis Window", ["Custom Time (Single Day)", "Custom Date Range", "Shift A", "Shift B", "Shift C", "Full Day"])
-        op_threshold = c_thresh.number_input(f"Active Threshold ({target_params[0]} >)", value=1.0, step=0.5)
         
         show_timeline = True
         if preset_shift == "Custom Date Range":
@@ -645,7 +630,8 @@ elif app_mode == "Statistical & Scatter Analysis":
         w_df_o2 = w_df_o2.dropna(subset=[f'{mc}_Num' for mc in mapped_cols])
         
         if not w_df_o2.empty:
-            stats_df_o2 = w_df_o2[w_df_o2[f'{mapped_cols[0]}_Num'] >= op_threshold]
+            # STRICT REQUIREMENT: Only count stats if primary flow is > 2 TPH
+            stats_df_o2 = w_df_o2[w_df_o2[f'{mapped_cols[0]}_Num'] > 2.0]
             b_stats = {"Boiler": b_name}
             
             if not stats_df_o2.empty:
@@ -653,7 +639,11 @@ elif app_mode == "Statistical & Scatter Analysis":
                     b_stats[f"Min {p}"] = stats_df_o2[f'{mc}_Num'].min()
                     b_stats[f"Avg {p}"] = stats_df_o2[f'{mc}_Num'].mean()
                     b_stats[f"Max {p}"] = stats_df_o2[f'{mc}_Num'].max()
-                    dist_figs[p].add_trace(go.Histogram(x=stats_df_o2[f'{mc}_Num'], histnorm='probability density', name=b_name, marker_color=B_COLORS.get(b_name), opacity=0.7))
+                    
+                    # 1D Standard Deviation / Density Line
+                    counts, bins = np.histogram(stats_df_o2[f'{mc}_Num'], bins=30, density=True)
+                    bin_centers = 0.5 * (bins[:-1] + bins[1:])
+                    dist_figs[p].add_trace(go.Scatter(x=bin_centers, y=counts, mode='lines', name=b_name, line=dict(color=B_COLORS.get(b_name), width=2), fill='tozeroy', fillcolor=B_COLORS.get(b_name).replace(')', ', 0.2)').replace('rgb', 'rgba') if 'rgb' in B_COLORS.get(b_name) else None))
                 
                 if generate_scatter:
                     pooled_x.extend(stats_df_o2[f'{mapped_cols[0]}_Num'].values)
@@ -683,27 +673,27 @@ elif app_mode == "Statistical & Scatter Analysis":
                     line_charts.append(fig_multi)
     
     if stats_data:
-        st.markdown("#### Period Statistics Summary (Active Operating Flow Only)")
+        st.markdown(f"#### Period Statistics Summary (Calculated strictly when {target_params[0]} > 2.0 TPH)")
         st.dataframe(pd.DataFrame(stats_data).set_index("Boiler").style.format("{:.2f}"), use_container_width=True)
         
         if show_timeline:
             st.markdown("#### Timeline Breakdowns")
             for fig in line_charts: st.plotly_chart(fig, use_container_width=True)
         else:
-            st.info("💡 Timelines are intentionally hidden in 'Custom Date Range' to prevent browser lag.")
+            st.info("💡 Timelines are hidden in 'Custom Date Range' to protect browser memory.")
         
         if generate_scatter:
-            st.markdown("#### 2D Scatter Correlation")
-            fig_scat.update_layout(title=f"Date: {start_t.date()}", xaxis_title=target_params[0], yaxis_title=target_params[1], template="plotly_white", height=450, margin=dict(t=40, b=50))
+            st.markdown("#### 2D Scatter Correlation (All Selected Boilers)")
+            fig_scat.update_layout(title=f"Date: {start_t.date()}", xaxis_title=target_params[0], yaxis_title=target_params[1], template="plotly_white", height=500, margin=dict(t=40, b=50))
             fig_scat = set_legend_bottom(fig_scat)
             st.plotly_chart(fig_scat, use_container_width=True)
         else:
-            st.info("💡 Select exactly 2 parameters in the configuration panel above to unlock the 2D Scatterplot and 3D Bivariate Density Map.")
+            st.info("💡 Select exactly 2 parameters to unlock the Unified Scatterplot and 3D Density Map.")
         
-        st.markdown("#### 1D Parameter Variations (Probability Density)")
+        st.markdown("#### Standard Deviation Distributions (Line Density)")
         d_cols = st.columns(2)
         for idx, p in enumerate(target_params):
-            dist_figs[p].update_layout(barmode='overlay', title=f"{p} Distribution | Date: {start_t.date()}", template="plotly_white", height=350, margin=dict(t=40, b=50))
+            dist_figs[p].update_layout(title=f"{p} Distribution | Date: {start_t.date()}", template="plotly_white", height=350, margin=dict(t=40, b=50))
             dist_figs[p] = set_legend_bottom(dist_figs[p])
             d_cols[idx % 2].plotly_chart(dist_figs[p], use_container_width=True)
         
@@ -746,9 +736,11 @@ elif app_mode == "System Cross-Analysis":
 
     if not target_boilers or not target_params: st.stop()
 
-    for target_boiler in target_boilers:
-        if target_boiler in cache:
-            b_df = cache[target_boiler]
+    fig_scat_all = go.Figure() if len(target_params) == 2 else None
+    
+    for b_name in target_boilers:
+        if b_name in cache:
+            b_df = cache[b_name]
             w_df = b_df[(b_df['timestamp'] >= start_t) & (b_df['timestamp'] <= end_t)].copy()
             
             if not w_df.empty:
@@ -758,48 +750,50 @@ elif app_mode == "System Cross-Analysis":
                     if match: valid_cols.append(match)
                 
                 if len(valid_cols) == 1:
-                    st.markdown(f"#### {target_boiler}: Timeline ({valid_cols[0]})")
+                    st.markdown(f"#### {b_name}: Timeline ({valid_cols[0]})")
                     fig_eff = go.Figure()
-                    fig_eff.add_trace(go.Scatter(x=w_df['timestamp'], y=pd.to_numeric(w_df[valid_cols[0]], errors='coerce'), name=valid_cols[0], line=dict(color=B_COLORS.get(target_boiler))))
+                    fig_eff.add_trace(go.Scatter(x=w_df['timestamp'], y=pd.to_numeric(w_df[valid_cols[0]], errors='coerce'), name=valid_cols[0], line=dict(color=B_COLORS.get(b_name))))
                     fig_eff.update_layout(title=f"Date: {start_t.date()}", template="plotly_white", hovermode="x unified", height=400, margin=dict(t=40, b=50))
                     fig_eff = set_legend_bottom(fig_eff)
                     st.plotly_chart(fig_eff, use_container_width=True)
 
                 elif len(valid_cols) == 2:
-                    st.markdown(f"#### {target_boiler}: {valid_cols[0]} vs {valid_cols[1]}")
+                    st.markdown(f"#### {b_name}: {valid_cols[0]} vs {valid_cols[1]}")
                     fig_eff = make_subplots(specs=[[{"secondary_y": True}]])
-                    fig_eff.add_trace(go.Scatter(x=w_df['timestamp'], y=pd.to_numeric(w_df[valid_cols[0]], errors='coerce'), name=valid_cols[0], line=dict(color=B_COLORS.get(target_boiler))), secondary_y=False)
+                    fig_eff.add_trace(go.Scatter(x=w_df['timestamp'], y=pd.to_numeric(w_df[valid_cols[0]], errors='coerce'), name=valid_cols[0], line=dict(color=B_COLORS.get(b_name))), secondary_y=False)
                     fig_eff.add_trace(go.Scatter(x=w_df['timestamp'], y=pd.to_numeric(w_df[valid_cols[1]], errors='coerce'), name=valid_cols[1], line=dict(color='#d62728', dash='dot')), secondary_y=True)
                     fig_eff.update_layout(title=f"Date: {start_t.date()}", template="plotly_white", hovermode="x unified", height=400, margin=dict(t=40, b=50))
                     fig_eff = set_legend_bottom(fig_eff)
                     st.plotly_chart(fig_eff, use_container_width=True)
                     
-                    st.markdown(f"#### 2D Scatter Correlation")
-                    fig_scat = go.Figure(data=go.Scattergl(
+                    fig_scat_all.add_trace(go.Scattergl(
                         x=pd.to_numeric(w_df[valid_cols[0]], errors='coerce'), 
                         y=pd.to_numeric(w_df[valid_cols[1]], errors='coerce'), 
-                        mode='markers', name=target_boiler,
-                        marker=dict(color=B_COLORS.get(target_boiler), size=6, opacity=0.6)
+                        mode='markers', name=b_name,
+                        marker=dict(color=B_COLORS.get(b_name), size=6, opacity=0.6)
                     ))
-                    fig_scat.update_layout(xaxis_title=valid_cols[0], yaxis_title=valid_cols[1], template="plotly_white", height=450, margin=dict(t=40, b=50))
-                    fig_scat = set_legend_bottom(fig_scat)
-                    st.plotly_chart(fig_scat, use_container_width=True)
 
                 elif len(valid_cols) > 2:
-                    st.markdown(f"#### {target_boiler}: Multi-Parameter Cross Analysis")
+                    st.markdown(f"#### {b_name}: Multi-Parameter Cross Analysis")
                     fig_multi = make_subplots(rows=len(valid_cols), cols=1, shared_xaxes=True, vertical_spacing=0.05, subplot_titles=valid_cols)
                     for idx, c_name in enumerate(valid_cols):
                         c_color = MULTI_COLORS[idx % len(MULTI_COLORS)]
                         fig_multi.add_trace(go.Scatter(x=w_df['timestamp'], y=pd.to_numeric(w_df[c_name], errors='coerce'), name=c_name, line=dict(color=c_color)), row=idx+1, col=1)
                     
                     dynamic_height = 200 * len(valid_cols)
-                    fig_multi.update_layout(title=f"Date: {start_t.date()}", template="plotly_white", hovermode="x unified", height=dynamic_height, margin=dict(t=60, b=50))
+                    fig_multi.update_layout(title=f"Date: {start_t.date()}", template="plotly_white", hovermode="x unified", height=dynamic_height, margin=dict(t=40, b=50))
                     fig_multi = set_legend_bottom(fig_multi)
                     st.plotly_chart(fig_multi, use_container_width=True)
             st.markdown("---")
+            
+    if fig_scat_all is not None:
+        st.markdown(f"#### Unified Scatter Comparison ({target_params[0]} vs {target_params[1]})")
+        fig_scat_all.update_layout(xaxis_title=target_params[0], yaxis_title=target_params[1], template="plotly_white", height=500, margin=dict(t=40, b=50))
+        fig_scat_all = set_legend_bottom(fig_scat_all)
+        st.plotly_chart(fig_scat_all, use_container_width=True)
 
 # ==============================================================================
-# 5. PARAMETER CORRELATION MATRIX (ANIMATED PRE-RENDER)
+# 5. PARAMETER CORRELATION MATRIX (ANIMATED PRE-RENDER & TRENDING)
 # ==============================================================================
 elif app_mode == "Parameter Correlation Matrix":
     st.title("Parameter Correlation Matrix")
@@ -807,7 +801,6 @@ elif app_mode == "Parameter Correlation Matrix":
     with st.expander("Analysis Configuration", expanded=True):
         col1, col2 = st.columns([1.5, 1.5])
         target_boilers = col1.multiselect("Select Boiler(s)", list(cache.keys()), default=[list(cache.keys())[0]], key="corr_boilers")
-        
         analysis_mode = col2.radio("Analysis Mode", ["Single Fixed Window", "Cinematic Time-Lapse Animation"], horizontal=True)
         
         if analysis_mode == "Single Fixed Window":
@@ -834,7 +827,6 @@ elif app_mode == "Parameter Correlation Matrix":
 
     for target_boiler in target_boilers:
         st.markdown("---")
-        st.markdown(f"#### Correlation Heatmap: {target_boiler}")
         if target_boiler in cache:
             b_df = cache[target_boiler]
             cols_to_keep = []
@@ -847,6 +839,7 @@ elif app_mode == "Parameter Correlation Matrix":
                 continue
                 
             if analysis_mode == "Single Fixed Window":
+                st.markdown(f"#### Correlation Heatmap: {target_boiler}")
                 w_df = b_df[(b_df['timestamp'] >= start_t) & (b_df['timestamp'] <= end_t)].copy()
                 if not w_df.empty:
                     w_df_numeric = w_df[cols_to_keep].apply(pd.to_numeric, errors='coerce').dropna(axis=1, how='all')
@@ -865,9 +858,17 @@ elif app_mode == "Parameter Correlation Matrix":
                     st.warning("No data available for this shift.")
                     
             else: 
-                st.info("Click the **Play** button below to watch correlations dynamically evolve day-by-day.")
+                # Cinematic Time-Lapse & Delta Tracking
+                st.markdown(f"#### Dynamic Correlation Shift: {target_boiler}")
+                
+                c_trace1, c_trace2 = st.columns(2)
+                trace_p1 = c_trace1.selectbox("Metric 1 to track over time:", options=cols_to_keep, index=0, key=f"tr1_{target_boiler}")
+                trace_p2 = c_trace2.selectbox("Metric 2 to track over time:", options=cols_to_keep, index=min(1, len(cols_to_keep)-1), key=f"tr2_{target_boiler}")
+                
                 frames = []
                 slider_steps = []
+                trend_dates = []
+                trend_corrs = []
                 first_z, valid_cols = None, None
                 current_d = tl_start
                 
@@ -883,9 +884,15 @@ elif app_mode == "Parameter Correlation Matrix":
                             if first_z is None:
                                 first_z = corr_matrix.values
                                 valid_cols = corr_matrix.columns
+                                
+                            # Track specific trend
+                            if trace_p1 in corr_matrix.columns and trace_p2 in corr_matrix.columns:
+                                trend_dates.append(current_d)
+                                trend_corrs.append(corr_matrix.loc[trace_p1, trace_p2])
+                                
                             frame_name = current_d.strftime("%Y-%m-%d")
                             frames.append(go.Frame(data=[go.Heatmap(z=corr_matrix.values)], name=frame_name))
-                            # Slowed down animation (780ms)
+                            # Animation slowed down by 1.3x (780ms)
                             slider_steps.append({
                                 "args": [[frame_name], {"frame": {"duration": 780, "redraw": True}, "mode": "immediate", "transition": {"duration": 780}}],
                                 "label": frame_name, "method": "animate"
@@ -893,12 +900,13 @@ elif app_mode == "Parameter Correlation Matrix":
                     current_d += timedelta(days=1)
                     
                 if frames and first_z is not None:
+                    # 1. Animation Matrix
                     fig_anim = go.Figure(
                         data=[go.Heatmap(z=first_z, x=valid_cols, y=valid_cols, colorscale='RdBu_r', zmin=-1, zmax=1)],
                         frames=frames
                     )
                     fig_anim.update_layout(
-                        template="plotly_white", height=750, margin=dict(t=40, b=150, l=150), xaxis=dict(tickangle=45),
+                        template="plotly_white", height=700, margin=dict(t=40, b=150, l=150), xaxis=dict(tickangle=45),
                         updatemenus=[dict(
                             type="buttons",
                             buttons=[
@@ -915,82 +923,114 @@ elif app_mode == "Parameter Correlation Matrix":
                         )]
                     )
                     st.plotly_chart(fig_anim, use_container_width=True)
+                    
+                    # 2. Magnitude / Drift Tracker
+                    st.markdown(f"#### Correlation Magnitude Tracker: {trace_p1} vs {trace_p2}")
+                    if trend_dates:
+                        fig_trend = go.Figure()
+                        fig_trend.add_trace(go.Scatter(x=trend_dates, y=trend_corrs, mode='lines+markers', line=dict(color='#ff7f0e', width=3), marker=dict(size=8)))
+                        fig_trend.update_layout(
+                            template="plotly_white", height=300, hovermode="x unified",
+                            yaxis=dict(title="Pearson Correlation (r)", range=[-1, 1]),
+                            margin=dict(t=10, b=40)
+                        )
+                        fig_trend.add_hline(y=0, line_dash="dot", line_color="black")
+                        st.plotly_chart(fig_trend, use_container_width=True)
+                        st.info("📉 **Insight:** Use this trendline to spot exactly when mechanical degradation or operational shifts altered the relationship between these two parameters.")
                 else:
                     st.warning("Could not calculate enough correlation frames for the selected date range.")
 
 # ==============================================================================
-# 6. MASS & ENERGY BALANCE (SANKEY DIAGRAM)
+# 6. MASS & ENERGY BALANCE (SANKEY)
 # ==============================================================================
 elif app_mode == "Mass & Energy Balance":
-    st.title("Mass & Energy Balance")
-    st.markdown("Generate interactive Sankey diagrams to visualize fluid distribution and heat mapping.")
+    st.title("Mass & Energy Balance Diagram")
     
     col1, col2 = st.columns([1, 1.5])
     analysis_type = col1.radio("Balance Type", ["Mass Balance (Tons)", "Energy Balance (kCal)"], horizontal=True)
     
-    default_sankey_data = """Feed Water [598461] Steam Generation
-Feed Water [21731] Blowdown
-Steam Generation [485432] Steam Consumption
-Steam Generation [88837] Losses
-Steam Consumption [38607] Flash steam
-Steam Consumption [446825] Condensate
-Flash steam [3943] Flash Local Vent
-Flash steam [34664] Flash steam to Boiler house
-Flash steam to Boiler house [8044] Flash Venting at boiler
-Flash steam to Boiler house [26620] Flash To Deaerator tank
-Condensate [12191] Flash Local Vent
-Condensate [434634] Condensate to Boiler House
-Losses [18870] Mainline drain
-Losses [2495] Steam Leakages
-Losses [2147] Stam Venting
-Losses [65325] Trap loss
-Flash To Deaerator tank [26620] Condensate to Deaerator
-Condensate to Boiler House [377768] Condensate to Deaerator
-Condensate to Boiler House [56866] Unaccounted"""
+    # Base configuration dataset
+    default_sankey_data = [
+        {"Source": "Feed Water", "Value": 598461, "Target": "Steam Generation"},
+        {"Source": "Feed Water", "Value": 21731, "Target": "Blowdown"},
+        {"Source": "Steam Generation", "Value": 485432, "Target": "Steam Consumption"},
+        {"Source": "Steam Generation", "Value": 88837, "Target": "Losses"},
+        {"Source": "Steam Consumption", "Value": 38607, "Target": "Flash steam"},
+        {"Source": "Steam Consumption", "Value": 446825, "Target": "Condensate"},
+        {"Source": "Flash steam", "Value": 3943, "Target": "Flash Local Vent"},
+        {"Source": "Flash steam", "Value": 34664, "Target": "Flash steam to Boiler house"},
+        {"Source": "Flash steam to Boiler house", "Value": 8044, "Target": "Flash Venting at boiler"},
+        {"Source": "Flash steam to Boiler house", "Value": 26620, "Target": "Flash To Deaerator tank"},
+        {"Source": "Condensate", "Value": 12191, "Target": "Flash Local Vent"},
+        {"Source": "Condensate", "Value": 434634, "Target": "Condensate to Boiler House"},
+        {"Source": "Losses", "Value": 18870, "Target": "Mainline drain"},
+        {"Source": "Losses", "Value": 2495, "Target": "Steam Leakages"},
+        {"Source": "Losses", "Value": 2147, "Target": "Stam Venting"},
+        {"Source": "Losses", "Value": 65325, "Target": "Trap loss"},
+        {"Source": "Flash To Deaerator tank", "Value": 26620, "Target": "Condensate to Deaerator"},
+        {"Source": "Condensate to Boiler House", "Value": 377768, "Target": "Condensate to Deaerator"},
+        {"Source": "Condensate to Boiler House", "Value": 56866, "Target": "Unaccounted"}
+    ]
     
-    st.markdown("### Sankey Input Data")
-    st.info("Format: `Source [Value] Target`. Only numerical values in brackets are parsed.")
-    raw_sankey = st.text_area("Edit Configuration", value=default_sankey_data, height=300)
-    
-    if st.button("Generate Sankey Diagram", type="primary"):
-        nodes = []
-        links_src = []
-        links_tgt = []
-        links_val = []
+    if 'sankey_df' not in st.session_state:
+        st.session_state.sankey_df = pd.DataFrame(default_sankey_data)
         
-        for line in raw_sankey.split('\n'):
-            match = re.search(r'(.*)\[(.*)\](.*)', line)
-            if match:
-                src, val_str, tgt = match.groups()
-                src, tgt = src.strip(), tgt.strip()
-                try:
-                    val = float(val_str.strip())
-                except ValueError:
-                    continue 
-                
-                if src not in nodes: nodes.append(src)
-                if tgt not in nodes: nodes.append(tgt)
-                links_src.append(nodes.index(src))
-                links_tgt.append(nodes.index(tgt))
-                links_val.append(val)
-                
-        if nodes and links_src:
-            fig_sankey = go.Figure(data=[go.Sankey(
-                node = dict(
-                    pad = 15,
-                    thickness = 20,
-                    line = dict(color = "black", width = 0.5),
-                    label = nodes,
-                    color = "#1f77b4" if analysis_type == "Mass Balance (Tons)" else "#ff7f0e"
-                ),
-                link = dict(
-                    source = links_src,
-                    target = links_tgt,
-                    value = links_val,
-                    color = "rgba(180, 180, 180, 0.4)"
-                )
-            )])
-            fig_sankey.update_layout(title_text=f"System Flow Visualization - {analysis_type}", font_size=12, height=600, template="plotly_white")
-            st.plotly_chart(fig_sankey, use_container_width=True)
-        else:
-            st.error("No valid links parsed. Ensure your text uses the `Source [Value] Target` format.")
+    st.markdown("### Interactive Parameter Editor")
+    st.info("💡 Add, edit, or delete rows directly in the table below. The Sankey diagram will instantly rebuild.")
+    
+    # Interactive Table Editor
+    edited_df = st.data_editor(st.session_state.sankey_df, num_rows="dynamic", use_container_width=True, height=300)
+    st.session_state.sankey_df = edited_df
+
+    st.markdown("---")
+    
+    if not edited_df.empty:
+        # Download Button
+        csv = edited_df.to_csv(index=False).encode('utf-8')
+        st.download_button(label="📥 Download Data Table (CSV)", data=csv, file_name='sankey_balance.csv', mime='text/csv')
+        
+        # Build Sankey
+        nodes = []
+        for src in edited_df['Source'].dropna().astype(str):
+            if src not in nodes: nodes.append(src)
+        for tgt in edited_df['Target'].dropna().astype(str):
+            if tgt not in nodes: nodes.append(tgt)
+            
+        links_src = [nodes.index(str(src)) for src in edited_df['Source'].dropna()]
+        links_tgt = [nodes.index(str(tgt)) for tgt in edited_df['Target'].dropna()]
+        links_val = pd.to_numeric(edited_df['Value'].dropna(), errors='coerce').fillna(0).tolist()
+        
+        # Color palettes matching reference image style
+        node_colors = ['#e377c2', '#7f7f7f', '#bcbd22', '#17becf', '#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd', '#8c564b']
+        dynamic_node_colors = [node_colors[i % len(node_colors)] for i in range(len(nodes))]
+        
+        # Make link colors transparent versions of their source node colors
+        link_colors = [dynamic_node_colors[src].replace('rgb', 'rgba').replace(')', ', 0.4)') if 'rgb' in dynamic_node_colors[src] else 'rgba(180, 180, 180, 0.4)' for src in links_src]
+
+        fig_sankey = go.Figure(data=[go.Sankey(
+            arrangement = "snap",
+            node = dict(
+                pad = 20,
+                thickness = 30,
+                line = dict(color = "black", width = 0.5),
+                label = nodes,
+                color = dynamic_node_colors
+            ),
+            link = dict(
+                source = links_src,
+                target = links_tgt,
+                value = links_val,
+                color = link_colors
+            )
+        )])
+        
+        fig_sankey.update_layout(
+            title_text=f"System Flow Visualization - {analysis_type}",
+            font=dict(size=14, color="black"),
+            height=800,
+            template="plotly_white",
+            margin=dict(t=50, b=50, l=50, r=50)
+        )
+        st.plotly_chart(fig_sankey, use_container_width=True)
+    else:
+        st.warning("Table is empty. Please add parameters to generate the diagram.")
