@@ -6,13 +6,14 @@ from datetime import timedelta, datetime, time
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 from pathlib import Path
+from collections import defaultdict
 import warnings
 warnings.filterwarnings('ignore')
 
 st.set_page_config(page_title="Boiler Analytics Platform", layout="wide", initial_sidebar_state="expanded")
 
 # ==============================================================================
-# UI/UX: PREMIUM APPLE-STYLE SIDEBAR NAVIGATION CSS 
+# UI/UX: PREMIUM APPLE-STYLE SIDEBAR NAVIGATION CSS
 # ==============================================================================
 st.markdown("""
 <style>
@@ -180,7 +181,7 @@ def find_matching_param(columns, target_param):
     for c in columns:
         col_clean = normalize_col(c)
         if target_clean in col_clean or col_clean in target_clean: return c
-    for kw in ['flow', 'steam', 'pressure', 'temperature', 'oxygen', 'level', 'feedwater', 'header']:
+    for kw in ['flow', 'steam', 'pressure', 'temperature', 'oxygen', 'level', 'feedwater']:
         if kw in target_clean:
             for c in columns:
                 if kw in normalize_col(c): return c
@@ -220,14 +221,16 @@ default_flow_idx = 0
 default_press_idx = 1
 default_o2_idx = 0
 flow_a_idx = None
+
 if all_params:
     for i, p in enumerate(all_params):
         p_lower = p.lower()
         if p_lower == 'steam flow meter': default_flow_idx = i
         elif ('steam flow' in p_lower or 'flow meter' in p_lower) and all_params[default_flow_idx].lower() != 'steam flow meter': default_flow_idx = i
         
+        # Strict match for Meter A
         if p_lower == 'steam flow meter a': flow_a_idx = i
-        elif 'flow meter a' in p_lower: flow_a_idx = i
+        elif 'flow meter a' in p_lower and 'tot' not in p_lower: flow_a_idx = i
             
         if p_lower == 'boiler pressure': default_press_idx = i
         elif ('boiler pressure' in p_lower or 'steam pressure' in p_lower) and all_params[default_press_idx].lower() != 'boiler pressure': default_press_idx = i
@@ -267,7 +270,6 @@ if app_mode == "Data Management":
         data_dir = Path('./boiler_data')
         data_dir.mkdir(parents=True, exist_ok=True)
         files_saved = 0
-        
         if b1_file:
             with open(data_dir / f"Boiler1_{b1_file.name}", "wb") as f: f.write(b1_file.getvalue())
             files_saved += 1
@@ -331,8 +333,7 @@ elif app_mode == "Boiler operation and Flow":
                 cols[0].metric("Event Duration", f"{ev['duration_mins']:.1f} min")
                 for idx, (label, val) in enumerate(totals.items()):
                     cols[idx + 1].metric(f"{label} Loss/Gen", f"{val:.1f} Tons")
-
-                # Re-Added Total Aggregate Plot
+    
                 st.markdown(f"#### Aggregate Factory Sum ({sel_param})")
                 sum_df = pd.DataFrame()
                 for b_name in target_boilers:
@@ -353,7 +354,7 @@ elif app_mode == "Boiler operation and Flow":
                     fig_sum.update_layout(title=f"Date: {sel_date}", template="plotly_white", hovermode="x unified", height=350, margin=dict(t=40, b=50))
                     fig_sum = set_legend_bottom(fig_sum)
                     st.plotly_chart(fig_sum, use_container_width=True)
-    
+                
                 st.markdown(f"#### Boiler Event Breakdowns")
                 for b_name in target_boilers:
                     if b_name not in cache: continue
@@ -369,7 +370,7 @@ elif app_mode == "Boiler operation and Flow":
                                 m2 = find_matching_param(b_df.columns, target_params[1])
                                 if m2: fig.add_trace(go.Scatter(x=w_df['timestamp'], y=pd.to_numeric(w_df[m2], errors='coerce'), name=m2, line=dict(color=SEC_COLOR, width=2, dash='dot')), secondary_y=True)
                             fig.add_vrect(x0=ev['start_time'], x1=ev['end_time'], fillcolor="rgba(220, 38, 38, 0.15)", line_width=0)
-                            fig.update_layout(title=f"{b_name} Analysis", template="plotly_white", hovermode="x unified", height=350, margin=dict(t=40, b=50))
+                            fig.update_layout(title=f"{b_name} Analysis | Date: {sel_date}", template="plotly_white", hovermode="x unified", height=350, margin=dict(t=40, b=50))
                             fig = set_legend_bottom(fig)
                             st.plotly_chart(fig, use_container_width=True)
                         else:
@@ -380,71 +381,96 @@ elif app_mode == "Boiler operation and Flow":
                                     c_color = MULTI_COLORS[idx % len(MULTI_COLORS)]
                                     fig_multi.add_trace(go.Scatter(x=w_df['timestamp'], y=pd.to_numeric(w_df[m_param], errors='coerce'), name=m_param, line=dict(color=c_color)), row=idx+1, col=1)
                             fig_multi.add_vrect(x0=ev['start_time'], x1=ev['end_time'], fillcolor="rgba(220, 38, 38, 0.15)", line_width=0)
-                            fig_multi.update_layout(title=f"{b_name} Multi-Metric Analysis", template="plotly_white", hovermode="x unified", height=200*len(target_params), margin=dict(t=40, b=50))
+                            fig_multi.update_layout(title=f"{b_name} Multi-Metric Analysis | Date: {sel_date}", template="plotly_white", hovermode="x unified", height=200*len(target_params), margin=dict(t=40, b=50))
                             fig_multi = set_legend_bottom(fig_multi)
                             st.plotly_chart(fig_multi, use_container_width=True)
                                 
     with tab_a:
-        st.markdown("### Steam Flow Meter A Analysis")
-        with st.expander("Analysis Setup", expanded=True):
+        st.markdown("### Meter A Alignment Check")
+        with st.expander("Analysis Configuration", expanded=True):
             c_boilers, c_params = st.columns([1.5, 1.5])
-            t_boilers_a = c_boilers.multiselect("Select Boilers to Aggregate (Total)", list(cache.keys()), default=list(cache.keys()), key="z_boilers_a")
+            t_boilers_a = c_boilers.multiselect("Select Boilers to Aggregate (Total)", list(cache.keys()), default=list(cache.keys()), key="za_boilers")
             
-            p1 = c_params.selectbox("Primary Component (Boiler Flows)", options=all_params, index=default_flow_idx, key="za_p1")
-            p2 = c_params.selectbox("Reference Component (Meter A)", options=all_params, index=flow_a_idx if flow_a_idx else 0, key="za_p2")
+            default_za_params = [all_params[default_flow_idx]]
+            if flow_a_idx is not None: default_za_params.append(all_params[flow_a_idx])
             
-            t_date_a = st.date_input("Target Date", value=min_date, min_value=min_date, max_value=max_date, key="z_date_a")
-        
-        if not t_boilers_a: st.stop()
-        st.markdown("---")
-        
-        start_t = datetime.combine(t_date_a, time(0, 0))
-        end_t = datetime.combine(t_date_a, time(23, 59))
-        
-        sum_df = pd.DataFrame()
-        node_df = pd.DataFrame()
-        
-        fig1 = go.Figure()
-        fig2 = go.Figure()
-        
-        for b_name in t_boilers_a:
-            if b_name not in cache: continue
-            b_df = cache[b_name]
-            w_df = b_df[(b_df['timestamp'] >= start_t) & (b_df['timestamp'] <= end_t)].copy()
-            if w_df.empty: continue
+            za_params = c_params.multiselect("Select Parameters (Main vs Reference Meter)", options=all_params, default=default_za_params, key="za_params")
             
-            m1 = find_matching_param(b_df.columns, p1)
-            m2 = find_matching_param(b_df.columns, p2)
+            c_shift, c_date = st.columns(2)
+            preset_shift = c_shift.selectbox("Analysis Window", ["Full Day", "Shift A", "Shift B", "Shift C", "Custom Date Range"], key="za_shift")
             
-            if m1:
-                series = pd.to_numeric(w_df.set_index('timestamp')[m1], errors='coerce').resample('1min').mean().interpolate(method='time')
-                sum_df[b_name] = series
-                fig2.add_trace(go.Scatter(x=series.index, y=series.values, name=f"{b_name} ({p1})", line=dict(color=B_COLORS.get(b_name), width=1.5)))
+            show_timeline_za = True
+            if preset_shift == "Custom Date Range":
+                dr1, dr2 = st.columns(2)
+                start_d = dr1.date_input("Start Date", value=min_date, min_value=min_date, max_value=max_date, key="za_start_d")
+                end_d = dr2.date_input("End Date", value=max_date, min_value=min_date, max_value=max_date, key="za_end_d")
+                start_t = datetime.combine(start_d, time(0, 0))
+                end_t = datetime.combine(end_d, time(23, 59))
+                show_timeline_za = False
+            else:
+                t_date_a = c_date.date_input("Target Date", value=min_date, min_value=min_date, max_value=max_date, key="za_date")
+                if preset_shift == "Shift A":
+                    start_t = datetime.combine(t_date_a - timedelta(days=1), time(22, 0)); end_t = datetime.combine(t_date_a, time(6, 0))
+                elif preset_shift == "Shift B":
+                    start_t = datetime.combine(t_date_a, time(6, 0)); end_t = datetime.combine(t_date_a, time(14, 0))
+                elif preset_shift == "Shift C":
+                    start_t = datetime.combine(t_date_a, time(14, 0)); end_t = datetime.combine(t_date_a, time(22, 0))
+                else:
+                    start_t = datetime.combine(t_date_a, time(0, 0)); end_t = datetime.combine(t_date_a, time(23, 59))
+        
+        if len(za_params) < 2:
+            st.warning("Please select at least two parameters (e.g., Main Flow and Flow Meter A) to compare.")
+        elif not t_boilers_a:
+            st.warning("Please select at least one boiler.")
+        else:
+            st.markdown("---")
+            p_main = za_params[0]
+            p_ref = za_params[1]
             
-            if m2:
-                series2 = pd.to_numeric(w_df.set_index('timestamp')[m2], errors='coerce').resample('1min').mean().interpolate(method='time')
-                node_df[b_name] = series2
+            sum_df = pd.DataFrame()
+            node_df = pd.DataFrame()
+            
+            fig1 = go.Figure()
+            fig2 = go.Figure()
+            
+            for b_name in t_boilers_a:
+                if b_name not in cache: continue
+                b_df = cache[b_name]
+                w_df = b_df[(b_df['timestamp'] >= start_t) & (b_df['timestamp'] <= end_t)].copy()
+                if w_df.empty: continue
+                
+                m1 = find_matching_param(b_df.columns, p_main)
+                m2 = find_matching_param(b_df.columns, p_ref)
+                
+                if m1:
+                    series = pd.to_numeric(w_df.set_index('timestamp')[m1], errors='coerce').resample('1min').mean().interpolate(method='time')
+                    sum_df[b_name] = series
+                    fig2.add_trace(go.Scatter(x=series.index, y=series.values, name=f"{b_name} ({p_main})", line=dict(color=B_COLORS.get(b_name), width=1.5)))
+                
+                if m2:
+                    series2 = pd.to_numeric(w_df.set_index('timestamp')[m2], errors='coerce').resample('1min').mean().interpolate(method='time')
+                    node_df[b_name] = series2
 
-        if not node_df.empty:
-            node_df['NodeAvg'] = node_df.mean(axis=1)
-            # Shared reference trace for both graphs
-            ref_trace = go.Scatter(x=node_df.index, y=node_df['NodeAvg'], name=f"Reference ({p2})", line=dict(color='#000000', width=2.5, dash='dot'))
-            fig1.add_trace(ref_trace)
-            fig2.add_trace(ref_trace)
+            if not node_df.empty:
+                node_df['NodeAvg'] = node_df.mean(axis=1)
+                ref_trace = go.Scatter(x=node_df.index, y=node_df['NodeAvg'], name=f"Reference ({p_ref})", line=dict(color='#000000', width=2.5, dash='dot'))
+                fig1.add_trace(ref_trace)
+                fig2.add_trace(ref_trace)
 
-        if not sum_df.empty:
-            sum_df['Total'] = sum_df.sum(axis=1)
-            fig1.add_trace(go.Scatter(x=sum_df.index, y=sum_df['Total'], name=f"Total Aggregated Flow", line=dict(color=SUM_LINE, width=3)))
+            if not sum_df.empty:
+                sum_df['Total'] = sum_df.sum(axis=1)
+                fig1.add_trace(go.Scatter(x=sum_df.index, y=sum_df['Total'], name=f"Total Aggregated Flow ({p_main})", line=dict(color=SUM_LINE, width=3)))
 
-        st.markdown("#### Total Aggregate vs Reference Meter (Same Axis)")
-        fig1.update_layout(template="plotly_white", hovermode="x unified", height=450, margin=dict(t=10, b=50))
-        fig1 = set_legend_bottom(fig1)
-        st.plotly_chart(fig1, use_container_width=True)
-        
-        st.markdown("#### Individual Boilers vs Reference Meter (Same Axis)")
-        fig2.update_layout(template="plotly_white", hovermode="x unified", height=450, margin=dict(t=10, b=50))
-        fig2 = set_legend_bottom(fig2)
-        st.plotly_chart(fig2, use_container_width=True)
+            if show_timeline_za:
+                st.markdown("#### Total Aggregate Flow vs Reference Meter (Same Axis)")
+                fig1.update_layout(template="plotly_white", hovermode="x unified", height=450, margin=dict(t=10, b=50))
+                fig1 = set_legend_bottom(fig1)
+                st.plotly_chart(fig1, use_container_width=True)
+                
+                st.markdown("#### Individual Boiler Flows vs Reference Meter (Same Axis)")
+                fig2.update_layout(template="plotly_white", hovermode="x unified", height=450, margin=dict(t=10, b=50))
+                fig2 = set_legend_bottom(fig2)
+                st.plotly_chart(fig2, use_container_width=True)
 
 # ==============================================================================
 # 2. LOADING PATTERN
@@ -497,8 +523,7 @@ elif app_mode == "Loading pattern":
         sum_flow_df = pd.DataFrame()
         header_press_df = pd.DataFrame()
         
-        # We need to find header pressure dynamically for the 4th graph
-        h_press_col = next((c for c in all_params if 'header pressure' in c.lower()), None)
+        h_press_col = next((c for c in all_params if 'header' in c.lower() and 'pressure' in c.lower()), None)
         
         for b_name in target_boilers:
             if b_name not in cache: continue
@@ -506,14 +531,11 @@ elif app_mode == "Loading pattern":
             w_df = b_df[(b_df['timestamp'] >= start_dt) & (b_df['timestamp'] <= end_dt)]
             if w_df.empty: continue
             
-            # 1. Combined Primary Metric Line Chart
             m_param_found = find_matching_param(b_df.columns, sel_param)
             if m_param_found:
                 fig_exp.add_trace(go.Scatter(x=w_df['timestamp'], y=pd.to_numeric(w_df[m_param_found], errors='coerce'), mode='lines', name=f"{b_name} ({m_param_found})", line=dict(color=B_COLORS.get(b_name), width=1.5)))
-                # Collect for sum chart
                 sum_flow_df[b_name] = pd.to_numeric(w_df.set_index('timestamp')[m_param_found], errors='coerce').resample('1min').mean().interpolate()
             
-            # Find header pressure (fallback to boiler pressure if not explicitly named)
             if h_press_col:
                 m_h = find_matching_param(b_df.columns, h_press_col)
                 if m_h: header_press_df[b_name] = pd.to_numeric(w_df.set_index('timestamp')[m_h], errors='coerce').resample('1min').mean().interpolate()
@@ -554,7 +576,6 @@ elif app_mode == "Loading pattern":
                     fig_multi = set_legend_bottom(fig_multi)
                     st.plotly_chart(fig_multi, use_container_width=True)
 
-        # 4th Graph: Total Flow vs Header Pressure
         if not sum_flow_df.empty and not header_press_df.empty:
             st.markdown("---")
             st.markdown("### Total Plant Load vs Header Pressure")
@@ -583,8 +604,9 @@ elif app_mode == "Statistical & Scatter Analysis":
         
         if not target_params or not target_boilers: st.warning("Please select at least one boiler and one parameter."); st.stop()
         
-        c_shift, c_date = st.columns([1, 1])
+        c_shift, c_date, c_thresh = st.columns([1, 1, 1])
         preset_shift = c_shift.selectbox("Analysis Window", ["Custom Time (Single Day)", "Custom Date Range", "Shift A", "Shift B", "Shift C", "Full Day"])
+        op_threshold = c_thresh.number_input(f"Active Threshold ({target_params[0]} >)", value=1.0, step=0.5)
         
         show_timeline = True
         if preset_shift == "Custom Date Range":
@@ -630,8 +652,7 @@ elif app_mode == "Statistical & Scatter Analysis":
         w_df_o2 = w_df_o2.dropna(subset=[f'{mc}_Num' for mc in mapped_cols])
         
         if not w_df_o2.empty:
-            # STRICT REQUIREMENT: Only count stats if primary flow is > 2 TPH
-            stats_df_o2 = w_df_o2[w_df_o2[f'{mapped_cols[0]}_Num'] > 2.0]
+            stats_df_o2 = w_df_o2[w_df_o2[f'{mapped_cols[0]}_Num'] >= op_threshold]
             b_stats = {"Boiler": b_name}
             
             if not stats_df_o2.empty:
@@ -640,7 +661,7 @@ elif app_mode == "Statistical & Scatter Analysis":
                     b_stats[f"Avg {p}"] = stats_df_o2[f'{mc}_Num'].mean()
                     b_stats[f"Max {p}"] = stats_df_o2[f'{mc}_Num'].max()
                     
-                    # 1D Standard Deviation / Density Line
+                    # Compute Line Density (Standard Deviation proxy)
                     counts, bins = np.histogram(stats_df_o2[f'{mc}_Num'], bins=30, density=True)
                     bin_centers = 0.5 * (bins[:-1] + bins[1:])
                     dist_figs[p].add_trace(go.Scatter(x=bin_centers, y=counts, mode='lines', name=b_name, line=dict(color=B_COLORS.get(b_name), width=2), fill='tozeroy', fillcolor=B_COLORS.get(b_name).replace(')', ', 0.2)').replace('rgb', 'rgba') if 'rgb' in B_COLORS.get(b_name) else None))
@@ -673,22 +694,18 @@ elif app_mode == "Statistical & Scatter Analysis":
                     line_charts.append(fig_multi)
     
     if stats_data:
-        st.markdown(f"#### Period Statistics Summary (Calculated strictly when {target_params[0]} > 2.0 TPH)")
+        st.markdown("#### Period Statistics Summary")
         st.dataframe(pd.DataFrame(stats_data).set_index("Boiler").style.format("{:.2f}"), use_container_width=True)
         
         if show_timeline:
             st.markdown("#### Timeline Breakdowns")
             for fig in line_charts: st.plotly_chart(fig, use_container_width=True)
-        else:
-            st.info("💡 Timelines are hidden in 'Custom Date Range' to protect browser memory.")
         
         if generate_scatter:
             st.markdown("#### 2D Scatter Correlation (All Selected Boilers)")
             fig_scat.update_layout(title=f"Date: {start_t.date()}", xaxis_title=target_params[0], yaxis_title=target_params[1], template="plotly_white", height=500, margin=dict(t=40, b=50))
             fig_scat = set_legend_bottom(fig_scat)
             st.plotly_chart(fig_scat, use_container_width=True)
-        else:
-            st.info("💡 Select exactly 2 parameters to unlock the Unified Scatterplot and 3D Density Map.")
         
         st.markdown("#### Standard Deviation Distributions (Line Density)")
         d_cols = st.columns(2)
@@ -736,7 +753,7 @@ elif app_mode == "System Cross-Analysis":
 
     if not target_boilers or not target_params: st.stop()
 
-    fig_scat_all = go.Figure() if len(target_params) == 2 else None
+    fig_multi = go.Figure()
     
     for b_name in target_boilers:
         if b_name in cache:
@@ -749,51 +766,19 @@ elif app_mode == "System Cross-Analysis":
                     match = find_matching_param(w_df.columns, p)
                     if match: valid_cols.append(match)
                 
-                if len(valid_cols) == 1:
-                    st.markdown(f"#### {b_name}: Timeline ({valid_cols[0]})")
-                    fig_eff = go.Figure()
-                    fig_eff.add_trace(go.Scatter(x=w_df['timestamp'], y=pd.to_numeric(w_df[valid_cols[0]], errors='coerce'), name=valid_cols[0], line=dict(color=B_COLORS.get(b_name))))
-                    fig_eff.update_layout(title=f"Date: {start_t.date()}", template="plotly_white", hovermode="x unified", height=400, margin=dict(t=40, b=50))
-                    fig_eff = set_legend_bottom(fig_eff)
-                    st.plotly_chart(fig_eff, use_container_width=True)
-
-                elif len(valid_cols) == 2:
-                    st.markdown(f"#### {b_name}: {valid_cols[0]} vs {valid_cols[1]}")
-                    fig_eff = make_subplots(specs=[[{"secondary_y": True}]])
-                    fig_eff.add_trace(go.Scatter(x=w_df['timestamp'], y=pd.to_numeric(w_df[valid_cols[0]], errors='coerce'), name=valid_cols[0], line=dict(color=B_COLORS.get(b_name))), secondary_y=False)
-                    fig_eff.add_trace(go.Scatter(x=w_df['timestamp'], y=pd.to_numeric(w_df[valid_cols[1]], errors='coerce'), name=valid_cols[1], line=dict(color='#d62728', dash='dot')), secondary_y=True)
-                    fig_eff.update_layout(title=f"Date: {start_t.date()}", template="plotly_white", hovermode="x unified", height=400, margin=dict(t=40, b=50))
-                    fig_eff = set_legend_bottom(fig_eff)
-                    st.plotly_chart(fig_eff, use_container_width=True)
+                for idx, c_name in enumerate(valid_cols):
+                    c_color = MULTI_COLORS[idx % len(MULTI_COLORS)] if len(target_boilers) == 1 else B_COLORS.get(b_name, '#000000')
+                    dash_style = 'solid' if len(target_boilers) == 1 else ['solid', 'dot', 'dash', 'dashdot'][idx % 4]
+                    fig_multi.add_trace(go.Scatter(x=w_df['timestamp'], y=pd.to_numeric(w_df[c_name], errors='coerce'), name=f"{b_name} - {c_name}", line=dict(color=c_color, width=2, dash=dash_style)))
                     
-                    fig_scat_all.add_trace(go.Scattergl(
-                        x=pd.to_numeric(w_df[valid_cols[0]], errors='coerce'), 
-                        y=pd.to_numeric(w_df[valid_cols[1]], errors='coerce'), 
-                        mode='markers', name=b_name,
-                        marker=dict(color=B_COLORS.get(b_name), size=6, opacity=0.6)
-                    ))
-
-                elif len(valid_cols) > 2:
-                    st.markdown(f"#### {b_name}: Multi-Parameter Cross Analysis")
-                    fig_multi = make_subplots(rows=len(valid_cols), cols=1, shared_xaxes=True, vertical_spacing=0.05, subplot_titles=valid_cols)
-                    for idx, c_name in enumerate(valid_cols):
-                        c_color = MULTI_COLORS[idx % len(MULTI_COLORS)]
-                        fig_multi.add_trace(go.Scatter(x=w_df['timestamp'], y=pd.to_numeric(w_df[c_name], errors='coerce'), name=c_name, line=dict(color=c_color)), row=idx+1, col=1)
-                    
-                    dynamic_height = 200 * len(valid_cols)
-                    fig_multi.update_layout(title=f"Date: {start_t.date()}", template="plotly_white", hovermode="x unified", height=dynamic_height, margin=dict(t=40, b=50))
-                    fig_multi = set_legend_bottom(fig_multi)
-                    st.plotly_chart(fig_multi, use_container_width=True)
-            st.markdown("---")
-            
-    if fig_scat_all is not None:
-        st.markdown(f"#### Unified Scatter Comparison ({target_params[0]} vs {target_params[1]})")
-        fig_scat_all.update_layout(xaxis_title=target_params[0], yaxis_title=target_params[1], template="plotly_white", height=500, margin=dict(t=40, b=50))
-        fig_scat_all = set_legend_bottom(fig_scat_all)
-        st.plotly_chart(fig_scat_all, use_container_width=True)
+    if fig_multi.data:
+        st.markdown(f"#### Multi-Parameter Overlay Timeline")
+        fig_multi.update_layout(title=f"Date: {start_t.date()}", template="plotly_white", hovermode="x unified", height=500, margin=dict(t=40, b=50))
+        fig_multi = set_legend_bottom(fig_multi)
+        st.plotly_chart(fig_multi, use_container_width=True)
 
 # ==============================================================================
-# 5. PARAMETER CORRELATION MATRIX (ANIMATED PRE-RENDER & TRENDING)
+# 5. PARAMETER CORRELATION MATRIX 
 # ==============================================================================
 elif app_mode == "Parameter Correlation Matrix":
     st.title("Parameter Correlation Matrix")
@@ -858,7 +843,6 @@ elif app_mode == "Parameter Correlation Matrix":
                     st.warning("No data available for this shift.")
                     
             else: 
-                # Cinematic Time-Lapse & Delta Tracking
                 st.markdown(f"#### Dynamic Correlation Shift: {target_boiler}")
                 
                 c_trace1, c_trace2 = st.columns(2)
@@ -885,14 +869,12 @@ elif app_mode == "Parameter Correlation Matrix":
                                 first_z = corr_matrix.values
                                 valid_cols = corr_matrix.columns
                                 
-                            # Track specific trend
                             if trace_p1 in corr_matrix.columns and trace_p2 in corr_matrix.columns:
                                 trend_dates.append(current_d)
                                 trend_corrs.append(corr_matrix.loc[trace_p1, trace_p2])
                                 
                             frame_name = current_d.strftime("%Y-%m-%d")
                             frames.append(go.Frame(data=[go.Heatmap(z=corr_matrix.values)], name=frame_name))
-                            # Animation slowed down by 1.3x (780ms)
                             slider_steps.append({
                                 "args": [[frame_name], {"frame": {"duration": 780, "redraw": True}, "mode": "immediate", "transition": {"duration": 780}}],
                                 "label": frame_name, "method": "animate"
@@ -900,7 +882,6 @@ elif app_mode == "Parameter Correlation Matrix":
                     current_d += timedelta(days=1)
                     
                 if frames and first_z is not None:
-                    # 1. Animation Matrix
                     fig_anim = go.Figure(
                         data=[go.Heatmap(z=first_z, x=valid_cols, y=valid_cols, colorscale='RdBu_r', zmin=-1, zmax=1)],
                         frames=frames
@@ -924,19 +905,17 @@ elif app_mode == "Parameter Correlation Matrix":
                     )
                     st.plotly_chart(fig_anim, use_container_width=True)
                     
-                    # 2. Magnitude / Drift Tracker
                     st.markdown(f"#### Correlation Magnitude Tracker: {trace_p1} vs {trace_p2}")
                     if trend_dates:
                         fig_trend = go.Figure()
                         fig_trend.add_trace(go.Scatter(x=trend_dates, y=trend_corrs, mode='lines+markers', line=dict(color='#ff7f0e', width=3), marker=dict(size=8)))
                         fig_trend.update_layout(
                             template="plotly_white", height=300, hovermode="x unified",
-                            yaxis=dict(title="Pearson Correlation (r)", range=[-1, 1]),
+                            yaxis=dict(title="Pearson Correlation (r)", range=[-1.1, 1.1]),
                             margin=dict(t=10, b=40)
                         )
                         fig_trend.add_hline(y=0, line_dash="dot", line_color="black")
                         st.plotly_chart(fig_trend, use_container_width=True)
-                        st.info("📉 **Insight:** Use this trendline to spot exactly when mechanical degradation or operational shifts altered the relationship between these two parameters.")
                 else:
                     st.warning("Could not calculate enough correlation frames for the selected date range.")
 
@@ -949,7 +928,6 @@ elif app_mode == "Mass & Energy Balance":
     col1, col2 = st.columns([1, 1.5])
     analysis_type = col1.radio("Balance Type", ["Mass Balance (Tons)", "Energy Balance (kCal)"], horizontal=True)
     
-    # Base configuration dataset
     default_sankey_data = [
         {"Source": "Feed Water", "Value": 598461, "Target": "Steam Generation"},
         {"Source": "Feed Water", "Value": 21731, "Target": "Blowdown"},
@@ -978,18 +956,15 @@ elif app_mode == "Mass & Energy Balance":
     st.markdown("### Interactive Parameter Editor")
     st.info("💡 Add, edit, or delete rows directly in the table below. The Sankey diagram will instantly rebuild.")
     
-    # Interactive Table Editor
     edited_df = st.data_editor(st.session_state.sankey_df, num_rows="dynamic", use_container_width=True, height=300)
     st.session_state.sankey_df = edited_df
 
     st.markdown("---")
     
     if not edited_df.empty:
-        # Download Button
         csv = edited_df.to_csv(index=False).encode('utf-8')
         st.download_button(label="📥 Download Data Table (CSV)", data=csv, file_name='sankey_balance.csv', mime='text/csv')
         
-        # Build Sankey
         nodes = []
         for src in edited_df['Source'].dropna().astype(str):
             if src not in nodes: nodes.append(src)
@@ -1000,21 +975,45 @@ elif app_mode == "Mass & Energy Balance":
         links_tgt = [nodes.index(str(tgt)) for tgt in edited_df['Target'].dropna()]
         links_val = pd.to_numeric(edited_df['Value'].dropna(), errors='coerce').fillna(0).tolist()
         
-        # Color palettes matching reference image style
+        # Calculate depth logic to prevent right-side congestion
+        depths = {i: 0 for i in range(len(nodes))}
+        changed = True
+        loops = 0
+        while changed and loops < 100:
+            changed = False
+            for s, t in zip(links_src, links_tgt):
+                if depths[s] + 1 > depths[t]:
+                    depths[t] = depths[s] + 1
+                    changed = True
+            loops += 1
+            
+        max_depth = max(depths.values()) if depths else 1
+        x_coords = [depths[i] / max_depth if max_depth > 0 else 0.5 for i in range(len(nodes))]
+        
+        y_coords = [0.5] * len(nodes)
+        depth_groups = defaultdict(list)
+        for i in range(len(nodes)):
+            depth_groups[depths[i]].append(i)
+            
+        for d, indices in depth_groups.items():
+            count = len(indices)
+            for j, idx in enumerate(indices):
+                y_coords[idx] = (j + 1) / (count + 1)
+        
         node_colors = ['#e377c2', '#7f7f7f', '#bcbd22', '#17becf', '#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd', '#8c564b']
         dynamic_node_colors = [node_colors[i % len(node_colors)] for i in range(len(nodes))]
-        
-        # Make link colors transparent versions of their source node colors
         link_colors = [dynamic_node_colors[src].replace('rgb', 'rgba').replace(')', ', 0.4)') if 'rgb' in dynamic_node_colors[src] else 'rgba(180, 180, 180, 0.4)' for src in links_src]
 
         fig_sankey = go.Figure(data=[go.Sankey(
             arrangement = "snap",
             node = dict(
-                pad = 20,
-                thickness = 30,
+                pad = 30,
+                thickness = 40,
                 line = dict(color = "black", width = 0.5),
                 label = nodes,
-                color = dynamic_node_colors
+                color = dynamic_node_colors,
+                x = x_coords,
+                y = y_coords
             ),
             link = dict(
                 source = links_src,
