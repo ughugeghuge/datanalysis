@@ -6,6 +6,7 @@ from datetime import timedelta, datetime, time
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 from pathlib import Path
+from collections import defaultdict
 import warnings
 warnings.filterwarnings('ignore')
 
@@ -144,44 +145,62 @@ def load_audit_data(data_dir='./boiler_data'):
     data_path = Path(data_dir)
     valid_files = list(data_path.glob('*.xlsx')) + list(data_path.glob('*.xls'))
     
-    prod_df = pd.DataFrame()
-    sf_df = pd.DataFrame()
+    prod_day_df, prod_mo_df = pd.DataFrame(), pd.DataFrame()
+    sf_day_df, sf_mo_df = pd.DataFrame(), pd.DataFrame()
     
     for f in valid_files:
         try:
             xls = pd.ExcelFile(f)
             if 'Day Wise Production Data' in xls.sheet_names and 'Steam Generation & Fuel Consump' in xls.sheet_names:
+                # 1. Day Wise Production
                 raw_prod = pd.read_excel(xls, sheet_name='Day Wise Production Data', header=None)
                 all_data = []
                 row2 = raw_prod.iloc[2].values
                 date_cols = [i for i, val in enumerate(row2) if str(val).strip() == 'Date']
-                
                 for dc in date_cols:
                     if dc + 3 < len(raw_prod.columns):
                         chunk = raw_prod.iloc[3:, [dc, dc+1, dc+2, dc+3]].copy()
                         chunk.columns = ['Date', 'Line', 'Desc', 'Volume']
-                        chunk['Date'] = pd.to_datetime(chunk['Date'], errors='coerce')
-                        chunk['Date'] = chunk['Date'].ffill() 
+                        chunk['Date'] = pd.to_datetime(chunk['Date'], errors='coerce').ffill()
                         chunk = chunk.dropna(subset=['Line', 'Volume'])
                         all_data.append(chunk)
-                        
                 if all_data:
-                    prod_df = pd.concat(all_data, ignore_index=True)
-                    prod_df['Volume'] = pd.to_numeric(prod_df['Volume'], errors='coerce').fillna(0)
+                    prod_day_df = pd.concat(all_data, ignore_index=True)
+                    prod_day_df['Volume'] = pd.to_numeric(prod_day_df['Volume'], errors='coerce').fillna(0)
                 
+                # 2. Month Wise Production
+                if 'Month Wise Production Data' in xls.sheet_names:
+                    raw_prod_mo = pd.read_excel(xls, sheet_name='Month Wise Production Data', header=None)
+                    prod_mo_df = raw_prod_mo.iloc[3:, [0, 1]].copy()
+                    if len(prod_mo_df.columns) == 2:
+                        prod_mo_df.columns = ['Date', 'Volume']
+                        prod_mo_df['Date'] = pd.to_datetime(prod_mo_df['Date'], errors='coerce')
+                        prod_mo_df['Volume'] = pd.to_numeric(prod_mo_df['Volume'], errors='coerce').fillna(0)
+                        prod_mo_df = prod_mo_df.dropna(subset=['Date'])
+                
+                # 3. Day Wise Steam & Fuel
                 raw_sf = pd.read_excel(xls, sheet_name='Steam Generation & Fuel Consump', header=None)
                 sf_temp = raw_sf.iloc[4:, [2, 3, 4, 5, 6, 7, 8]].copy()
                 sf_temp.columns = ['Date', 'B1_Fuel', 'B2_Fuel', 'B3_Fuel', 'B1_Steam', 'B2_Steam', 'B3_Steam']
                 sf_temp['Date'] = pd.to_datetime(sf_temp['Date'], errors='coerce')
                 sf_temp = sf_temp.dropna(subset=['Date'])
-                for c in sf_temp.columns[1:]:
-                    sf_temp[c] = pd.to_numeric(sf_temp[c], errors='coerce').fillna(0)
-                sf_df = sf_temp
+                for c in sf_temp.columns[1:]: sf_temp[c] = pd.to_numeric(sf_temp[c], errors='coerce').fillna(0)
+                sf_day_df = sf_temp
+                
+                # 4. Month Wise Steam & Fuel
+                if 'Month Wise Steam Generation' in xls.sheet_names:
+                    raw_sf_mo = pd.read_excel(xls, sheet_name='Month Wise Steam Generation', header=None)
+                    sf_mo_temp = raw_sf_mo.iloc[4:, [2, 3, 4, 5, 6, 7, 8]].copy()
+                    sf_mo_temp.columns = ['Date', 'B1_Fuel', 'B2_Fuel', 'B3_Fuel', 'B1_Steam', 'B2_Steam', 'B3_Steam']
+                    sf_mo_temp['Date'] = pd.to_datetime(sf_mo_temp['Date'], errors='coerce')
+                    sf_mo_temp = sf_mo_temp.dropna(subset=['Date'])
+                    for c in sf_mo_temp.columns[1:]: sf_mo_temp[c] = pd.to_numeric(sf_mo_temp[c], errors='coerce').fillna(0)
+                    sf_mo_df = sf_mo_temp
                 break 
         except Exception:
             pass
             
-    return sf_df, prod_df
+    return sf_day_df, prod_day_df, sf_mo_df, prod_mo_df
 
 @st.cache_data
 def extract_events(data_cache, min_dur_minutes):
@@ -271,6 +290,7 @@ if all_params:
         if p_lower == 'steam flow meter': default_flow_idx = i
         elif ('steam flow' in p_lower or 'flow meter' in p_lower) and all_params[default_flow_idx].lower() != 'steam flow meter': default_flow_idx = i
         
+        # Strict logic for Meter A
         if p_lower == 'steam flow meter a': flow_a_idx = i
         elif 'flow meter a' in p_lower and 'tot' not in p_lower and flow_a_idx is None: flow_a_idx = i
             
@@ -328,6 +348,7 @@ if app_mode == "Data Management":
             with open(data_dir / f"Boiler3_{b3_file.name}", "wb") as f: f.write(b3_file.getvalue())
             files_saved += 1
         if audit_file:
+            # Preserves whatever name the user uploads
             with open(data_dir / audit_file.name, "wb") as f: f.write(audit_file.getvalue())
             files_saved += 1
             
@@ -402,6 +423,7 @@ elif app_mode == "Boiler operation and Flow":
                     fig_sum = go.Figure()
                     fig_sum.add_trace(go.Scatter(x=sum_df.index, y=sum_df['Aggregate'], mode='lines', fill='tozeroy', name="Overall Sum", line=dict(color=SUM_LINE, width=2), fillcolor=SUM_FILL))
                     
+                    # Highlight ALL overlapping events across selected boilers
                     overlapping_events = events_df[events_df['boiler'].isin(target_boilers) & (events_df['start_time'] <= ev['window_end']) & (events_df['end_time'] >= ev['window_start'])]
                     for _, b_ev in overlapping_events.iterrows():
                         fig_sum.add_vrect(x0=b_ev['start_time'], x1=b_ev['end_time'], fillcolor="rgba(220, 38, 38, 0.15)", line_width=0)
@@ -425,6 +447,7 @@ elif app_mode == "Boiler operation and Flow":
                                 m2 = find_matching_param(b_df.columns, target_params[1])
                                 if m2: fig.add_trace(go.Scatter(x=w_df['timestamp'], y=pd.to_numeric(w_df[m2], errors='coerce'), name=m2, line=dict(color=SEC_COLOR, width=2, dash='dot')), secondary_y=True)
                             
+                            # Highlight ONLY this specific boiler's events
                             b_events = events_df[(events_df['boiler'] == b_name) & (events_df['start_time'] <= ev['window_end']) & (events_df['end_time'] >= ev['window_start'])]
                             for _, b_ev in b_events.iterrows():
                                 fig.add_vrect(x0=b_ev['start_time'], x1=b_ev['end_time'], fillcolor="rgba(220, 38, 38, 0.15)", line_width=0)
@@ -492,6 +515,7 @@ elif app_mode == "Boiler operation and Flow":
             sum_df = pd.DataFrame()
             node_df = pd.DataFrame()
             
+            # Single Axis Graphs for 1:1 scale comparison
             fig1 = go.Figure()
             fig2 = go.Figure()
             
@@ -525,12 +549,12 @@ elif app_mode == "Boiler operation and Flow":
 
             if show_timeline_za:
                 st.markdown("#### Total Aggregate Flow vs Reference Meter (Same Axis)")
-                fig1.update_layout(template="plotly_white", hovermode="x unified", height=450, xaxis_title="Time", margin=dict(t=10, b=50))
+                fig1.update_layout(template="plotly_white", hovermode="x unified", height=450, xaxis_title="Time", yaxis_title="Flow", margin=dict(t=10, b=50))
                 fig1 = set_legend_bottom(fig1)
                 st.plotly_chart(fig1, use_container_width=True)
                 
                 st.markdown("#### Individual Boiler Flows vs Reference Meter (Same Axis)")
-                fig2.update_layout(template="plotly_white", hovermode="x unified", height=450, xaxis_title="Time", margin=dict(t=10, b=50))
+                fig2.update_layout(template="plotly_white", hovermode="x unified", height=450, xaxis_title="Time", yaxis_title="Flow", margin=dict(t=10, b=50))
                 fig2 = set_legend_bottom(fig2)
                 st.plotly_chart(fig2, use_container_width=True)
 
@@ -670,12 +694,14 @@ elif app_mode == "Statistical & Scatter Analysis":
         preset_shift = c_shift.selectbox("Analysis Window", ["Custom Time (Single Day)", "Custom Date Range", "Shift A", "Shift B", "Shift C", "Full Day"])
         op_threshold = c_thresh.number_input(f"Active Threshold ({target_params[0]} >)", value=1.0, step=0.5)
         
+        show_timeline = True
         if preset_shift == "Custom Date Range":
             dr1, dr2 = st.columns(2)
             start_d = dr1.date_input("Start Date", value=min_date, min_value=min_date, max_value=max_date, key="o2_start_d")
             end_d = dr2.date_input("End Date", value=max_date, min_value=min_date, max_value=max_date, key="o2_end_d")
             start_t = datetime.combine(start_d, time(0, 0))
             end_t = datetime.combine(end_d, time(23, 59))
+            show_timeline = False 
         else:
             target_o2_date = c_date.date_input("Target Date", value=min_date, min_value=min_date, max_value=max_date, key="o2_date")
             if preset_shift == "Shift A":
@@ -693,6 +719,7 @@ elif app_mode == "Statistical & Scatter Analysis":
     st.markdown("---")
     
     stats_data = []
+    line_charts = []
     generate_scatter = (len(target_params) == 2)
     fig_scat = go.Figure() if generate_scatter else None
     fig_3d = go.Figure() if generate_scatter else None
@@ -720,6 +747,7 @@ elif app_mode == "Statistical & Scatter Analysis":
                     b_stats[f"Avg {p}"] = stats_df_o2[f'{mc}_Num'].mean()
                     b_stats[f"Max {p}"] = stats_df_o2[f'{mc}_Num'].max()
                     
+                    # Compute Line Density (Standard Deviation proxy)
                     counts, bins = np.histogram(stats_df_o2[f'{mc}_Num'], bins=30, density=True)
                     bin_centers = 0.5 * (bins[:-1] + bins[1:])
                     dist_figs[p].add_trace(go.Scatter(x=bin_centers, y=counts, mode='lines', name=b_name, line=dict(color=B_COLORS.get(b_name), width=2), fill='tozeroy', fillcolor=B_COLORS.get(b_name).replace(')', ', 0.2)').replace('rgb', 'rgba') if 'rgb' in B_COLORS.get(b_name) else None))
@@ -733,9 +761,31 @@ elif app_mode == "Statistical & Scatter Analysis":
                     b_stats[f"Min {p}"] = 0.0; b_stats[f"Avg {p}"] = 0.0; b_stats[f"Max {p}"] = 0.0
             stats_data.append(b_stats)
             
+            if show_timeline:
+                if len(target_params) <= 2:
+                    fig_line = make_subplots(specs=[[{"secondary_y": True}]])
+                    fig_line.add_trace(go.Scatter(x=w_df_o2['timestamp'], y=w_df_o2[f'{mapped_cols[0]}_Num'], name=target_params[0], line=dict(color=B_COLORS.get(b_name), width=2)), secondary_y=False)
+                    if len(target_params) == 2:
+                        fig_line.add_trace(go.Scatter(x=w_df_o2['timestamp'], y=w_df_o2[f'{mapped_cols[1]}_Num'], name=target_params[1], line=dict(color=SEC_COLOR, width=2, dash='dot')), secondary_y=True)
+                    fig_line.update_layout(title=f"{b_name} Breakdown", template="plotly_white", hovermode="x unified", height=300, xaxis_title="Time", margin=dict(t=40, b=50))
+                    fig_line = set_legend_bottom(fig_line)
+                    line_charts.append(fig_line)
+                else:
+                    fig_multi = make_subplots(rows=len(target_params), cols=1, shared_xaxes=True, vertical_spacing=0.05, subplot_titles=target_params)
+                    for idx, (mc, p) in enumerate(zip(mapped_cols, target_params)):
+                        c_color = MULTI_COLORS[idx % len(MULTI_COLORS)]
+                        fig_multi.add_trace(go.Scatter(x=w_df_o2['timestamp'], y=w_df_o2[f'{mc}_Num'], name=p, line=dict(color=c_color)), row=idx+1, col=1)
+                    fig_multi.update_layout(title=f"{b_name} Multi-Metric Analysis", template="plotly_white", hovermode="x unified", height=200*len(target_params), xaxis_title="Time", margin=dict(t=40, b=50))
+                    fig_multi = set_legend_bottom(fig_multi)
+                    line_charts.append(fig_multi)
+    
     if stats_data:
         st.markdown(f"#### Period Statistics Summary")
         st.dataframe(pd.DataFrame(stats_data).set_index("Boiler").style.format("{:.2f}"), use_container_width=True)
+        
+        if show_timeline:
+            st.markdown("#### Timeline Breakdowns")
+            for fig in line_charts: st.plotly_chart(fig, use_container_width=True)
         
         if generate_scatter:
             st.markdown("#### 2D Scatter Correlation (All Selected Boilers)")
@@ -805,6 +855,7 @@ elif app_mode == "System Cross-Analysis":
                     match = find_matching_param(w_df.columns, p)
                     if match: valid_cols.append(match)
                 
+                # Dedicated Boilerwise diagrams
                 if len(valid_cols) == 1:
                     st.markdown(f"#### {b_name}: Timeline ({valid_cols[0]})")
                     fig_eff = go.Figure()
@@ -841,6 +892,7 @@ elif app_mode == "System Cross-Analysis":
                     fig_b_multi = set_legend_bottom(fig_b_multi)
                     st.plotly_chart(fig_b_multi, use_container_width=True)
                 
+                # Aggregate Timeline Construction
                 for idx, c_name in enumerate(valid_cols):
                     c_color = MULTI_COLORS[idx % len(MULTI_COLORS)] if len(target_boilers) == 1 else B_COLORS.get(b_name, '#000000')
                     dash_style = 'solid' if len(target_boilers) == 1 else ['solid', 'dot', 'dash', 'dashdot'][idx % 4]
@@ -1072,17 +1124,46 @@ elif app_mode == "Mass & Energy Balance":
         links_tgt = [nodes.index(str(tgt)) for tgt in edited_df['Target'].dropna()]
         links_val = pd.to_numeric(edited_df['Value'].dropna(), errors='coerce').fillna(0).tolist()
         
+        # Calculate strict topological depth to prevent nodes from flying to the far right
+        depths = {i: 0 for i in range(len(nodes))}
+        changed = True
+        loops = 0
+        while changed and loops < 100:
+            changed = False
+            for s, t in zip(links_src, links_tgt):
+                if depths[s] + 1 > depths[t]:
+                    depths[t] = depths[s] + 1
+                    changed = True
+            loops += 1
+            
+        max_depth = max(depths.values()) if depths else 1
+        x_coords = [depths[i] / max_depth if max_depth > 0 else 0.5 for i in range(len(nodes))]
+        
+        y_coords = [0.5] * len(nodes)
+        depth_groups = defaultdict(list)
+        for i in range(len(nodes)):
+            depth_groups[depths[i]].append(i)
+            
+        for d, indices in depth_groups.items():
+            count = len(indices)
+            for j, idx in enumerate(indices):
+                # Spread evenly vertically based on how many nodes are in this column
+                y_coords[idx] = (j + 1) / (count + 1)
+        
         node_colors = ['#e377c2', '#7f7f7f', '#bcbd22', '#17becf', '#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd', '#8c564b']
         dynamic_node_colors = [node_colors[i % len(node_colors)] for i in range(len(nodes))]
         link_colors = [dynamic_node_colors[src].replace('rgb', 'rgba').replace(')', ', 0.4)') if 'rgb' in dynamic_node_colors[src] else 'rgba(180, 180, 180, 0.4)' for src in links_src]
 
         fig_sankey = go.Figure(data=[go.Sankey(
+            arrangement = "snap",
             node = dict(
                 pad = 30,
                 thickness = 40,
                 line = dict(color = "black", width = 0.5),
                 label = nodes,
-                color = dynamic_node_colors
+                color = dynamic_node_colors,
+                x = x_coords,
+                y = y_coords
             ),
             link = dict(
                 source = links_src,
@@ -1109,16 +1190,16 @@ elif app_mode == "Mass & Energy Balance":
 elif app_mode == "Steam to Fuel Analysis":
     st.title("Steam to Fuel Analysis")
     
-    sf_df, prod_df = load_audit_data('./boiler_data')
-    if sf_df.empty:
+    sf_day_df, prod_day_df, sf_mo_df, prod_mo_df = load_audit_data('./boiler_data')
+    if sf_day_df.empty:
         st.warning("Audit Report Data not found. Please upload 'Fuel_steam_Production.xlsx' in Data Management.")
     else:
         time_res = st.radio("Time Resolution", ["Day-wise", "Month-wise"], horizontal=True)
-        df = sf_df.copy().sort_values('Date')
         
-        if time_res == "Month-wise":
-            df['Date'] = df['Date'].dt.to_period('M').dt.to_timestamp()
-            df = df.groupby('Date').sum().reset_index()
+        if time_res == "Month-wise" and not sf_mo_df.empty:
+            df = sf_mo_df.copy().sort_values('Date')
+        else:
+            df = sf_day_df.copy().sort_values('Date')
 
         df['B1_Ratio'] = np.where(df['B1_Fuel'] > 0, (df['B1_Steam'] * 1000) / df['B1_Fuel'], np.nan)
         df['B2_Ratio'] = np.where(df['B2_Fuel'] > 0, (df['B2_Steam'] * 1000) / df['B2_Fuel'], np.nan)
@@ -1159,116 +1240,151 @@ elif app_mode == "Steam to Fuel Analysis":
 elif app_mode == "Production Efficiency":
     st.title("Production Efficiency Analysis")
     
-    sf_df, prod_df = load_audit_data('./boiler_data')
-    if sf_df.empty or prod_df.empty:
+    sf_day_df, prod_day_df, sf_mo_df, prod_mo_df = load_audit_data('./boiler_data')
+    if sf_day_df.empty or prod_day_df.empty:
         st.warning("Audit Report Data not found. Please upload 'Fuel_steam_Production.xlsx' in Data Management.")
     else:
-        time_res = st.radio("Time Resolution", ["Day-wise", "Month-wise"], horizontal=True)
+        c1, c2 = st.columns([1, 2])
+        time_res = c1.radio("Time Resolution", ["Day-wise", "Month-wise"], horizontal=True)
         
-        daily_prod = prod_df.groupby('Date')['Volume'].sum().reset_index()
-        daily_prod.rename(columns={'Volume': 'Total_Production_KG'}, inplace=True)
-        
-        df_sf = sf_df.copy()
-        df_sf['Total_Fuel_KG'] = df_sf['B1_Fuel'] + df_sf['B2_Fuel'] + df_sf['B3_Fuel']
-        df_sf['Total_Steam_Tons'] = df_sf['B1_Steam'] + df_sf['B2_Steam'] + df_sf['B3_Steam']
-        
-        if time_res == "Month-wise":
-            daily_prod['Date'] = daily_prod['Date'].dt.to_period('M').dt.to_timestamp()
-            daily_prod = daily_prod.groupby('Date').sum().reset_index()
+        if time_res == "Day-wise":
+            unique_lines = prod_day_df['Line'].dropna().unique().tolist()
+            sel_lines = c2.multiselect("Select Production Lines for Aggregate Math", unique_lines, default=unique_lines)
             
-            df_sf['Date'] = df_sf['Date'].dt.to_period('M').dt.to_timestamp()
-            df_sf = df_sf.groupby('Date').sum().reset_index()
+            # Filter Production dataframe by selected lines before aggregating
+            filtered_prod = prod_day_df[prod_day_df['Line'].isin(sel_lines)]
             
-            # Prep monthly data for the line variation subtab as well
-            prod_df_working = prod_df.copy()
-            prod_df_working['Date'] = prod_df_working['Date'].dt.to_period('M').dt.to_timestamp()
-        else:
-            prod_df_working = prod_df.copy()
+            daily_prod = filtered_prod.groupby('Date')['Volume'].sum().reset_index()
+            daily_prod.rename(columns={'Volume': 'Total_Production_KG'}, inplace=True)
             
-        merged_df = pd.merge(daily_prod, df_sf[['Date', 'Total_Fuel_KG', 'Total_Steam_Tons']], on='Date', how='inner')
-        
-        # Calculate specific consumption metrics
-        merged_df['Fuel_to_Prod'] = np.where(merged_df['Total_Production_KG'] > 0, merged_df['Total_Fuel_KG'] / merged_df['Total_Production_KG'], np.nan)
-        merged_df['Steam_to_Prod'] = np.where(merged_df['Total_Production_KG'] > 0, (merged_df['Total_Steam_Tons'] * 1000) / merged_df['Total_Production_KG'], np.nan)
-        
-        tab_fuel, tab_steam, tab_lines = st.tabs(["Fuel to Production Ratio", "Steam to Production Ratio", "Line-wise Variation"])
-        
-        with tab_fuel:
-            st.markdown("### Total Fuel Consumption vs Production")
+            df_sf = sf_day_df.copy()
+            df_sf['Total_Fuel_KG'] = df_sf['B1_Fuel'] + df_sf['B2_Fuel'] + df_sf['B3_Fuel']
+            df_sf['Total_Steam_Tons'] = df_sf['B1_Steam'] + df_sf['B2_Steam'] + df_sf['B3_Steam']
             
-            c1, c2 = st.columns(2)
-            c1.metric("Average Fuel to Production Ratio", f"{merged_df['Fuel_to_Prod'].mean(skipna=True):.3f} kg/kg")
+            merged_df = pd.merge(daily_prod, df_sf[['Date', 'Total_Fuel_KG', 'Total_Steam_Tons']], on='Date', how='inner')
             
-            fig_pf = make_subplots(specs=[[{"secondary_y": True}]])
-            fig_pf.add_trace(go.Scatter(x=merged_df['Date'], y=merged_df['Total_Production_KG'], name='Total Production (KG)', fill='tozeroy', line=dict(color='#2ca02c')), secondary_y=False)
-            fig_pf.add_trace(go.Scatter(x=merged_df['Date'], y=merged_df['Total_Fuel_KG'], name='Total Fuel (KG)', line=dict(color='#d62728', dash='dash', width=2)), secondary_y=True)
-            fig_pf.update_layout(template="plotly_white", hovermode="x unified", height=450, xaxis_title="Date", margin=dict(t=40, b=50))
-            fig_pf = set_legend_bottom(fig_pf)
-            st.plotly_chart(fig_pf, use_container_width=True)
-            
-            st.markdown("#### Fuel to Production Ratio Over Time")
-            fig_pfr = go.Figure(go.Scatter(x=merged_df['Date'], y=merged_df['Fuel_to_Prod'], name='Fuel to Prod Ratio', line=dict(color='#ff7f0e', width=3)))
-            fig_pfr.update_layout(template="plotly_white", hovermode="x unified", height=350, xaxis_title="Date", yaxis_title="Ratio (kg/kg)", margin=dict(t=10, b=50))
-            fig_pfr = set_legend_bottom(fig_pfr)
-            st.plotly_chart(fig_pfr, use_container_width=True)
-            
-        with tab_steam:
-            st.markdown("### Total Steam Consumption vs Production")
-            
-            c1, c2 = st.columns(2)
-            c1.metric("Average Steam to Production Ratio", f"{merged_df['Steam_to_Prod'].mean(skipna=True):.3f} kg/kg")
-            
-            fig_ps = make_subplots(specs=[[{"secondary_y": True}]])
-            fig_ps.add_trace(go.Scatter(x=merged_df['Date'], y=merged_df['Total_Production_KG'], name='Total Production (KG)', fill='tozeroy', line=dict(color='#1f77b4')), secondary_y=False)
-            fig_ps.add_trace(go.Scatter(x=merged_df['Date'], y=merged_df['Total_Steam_Tons'] * 1000, name='Total Steam (KG)', line=dict(color='#9467bd', dash='dash', width=2)), secondary_y=True)
-            fig_ps.update_layout(template="plotly_white", hovermode="x unified", height=450, xaxis_title="Date", margin=dict(t=40, b=50))
-            fig_ps = set_legend_bottom(fig_ps)
-            st.plotly_chart(fig_ps, use_container_width=True)
-            
-            st.markdown("#### Steam to Production Ratio Over Time")
-            fig_psr = go.Figure(go.Scatter(x=merged_df['Date'], y=merged_df['Steam_to_Prod'], name='Steam to Prod Ratio', line=dict(color='#17becf', width=3)))
-            fig_psr.update_layout(template="plotly_white", hovermode="x unified", height=350, xaxis_title="Date", yaxis_title="Ratio (kg/kg)", margin=dict(t=10, b=50))
-            fig_psr = set_legend_bottom(fig_psr)
-            st.plotly_chart(fig_psr, use_container_width=True)
-            
-        with tab_lines:
-            st.markdown("### Line-wise Production Volume")
-            unique_lines = prod_df_working['Line'].dropna().unique().tolist()
-            sel_lines = st.multiselect("Select Production Lines", unique_lines, default=unique_lines)
-            
-            if sel_lines:
-                fig_lines = go.Figure()
-                for i, ln in enumerate(sel_lines):
-                    ln_df = prod_df_working[prod_df_working['Line'] == ln].groupby('Date')['Volume'].sum().reset_index()
-                    c_color = MULTI_COLORS[i % len(MULTI_COLORS)]
-                    fig_lines.add_trace(go.Scatter(x=ln_df['Date'], y=ln_df['Volume'], name=ln, line=dict(color=c_color, width=2)))
+        else: # Month-wise
+            st.info("Line selection is hidden in Month-wise mode because raw monthly production data lacks line-level breakdown.")
+            if not prod_mo_df.empty and not sf_mo_df.empty:
+                daily_prod = prod_mo_df.copy()
+                daily_prod.rename(columns={'Volume': 'Total_Production_KG'}, inplace=True)
                 
-                fig_lines.update_layout(template="plotly_white", hovermode="x unified", height=450, xaxis_title="Date", yaxis_title="Production Volume (KG)", margin=dict(t=10, b=50))
-                fig_lines = set_legend_bottom(fig_lines)
-                st.plotly_chart(fig_lines, use_container_width=True)
+                df_sf = sf_mo_df.copy()
+                df_sf['Total_Fuel_KG'] = df_sf['B1_Fuel'] + df_sf['B2_Fuel'] + df_sf['B3_Fuel']
+                df_sf['Total_Steam_Tons'] = df_sf['B1_Steam'] + df_sf['B2_Steam'] + df_sf['B3_Steam']
                 
-                st.markdown("---")
-                st.markdown("### Product Variant Permutations & Ranges")
-                st.info("Because multiple product variants run on the same line during a single shift, this analyzes the frequency and total line volume output when specific products are active.")
+                merged_df = pd.merge(daily_prod, df_sf[['Date', 'Total_Fuel_KG', 'Total_Steam_Tons']], on='Date', how='inner')
+                sel_lines = []
+            else:
+                st.warning("Monthly data could not be parsed correctly from the uploaded file.")
+                merged_df = pd.DataFrame()
                 
-                prod_clean = prod_df_working.dropna(subset=['Desc'])
-                prod_clean['Variant'] = prod_clean['Desc'].astype(str).apply(lambda x: [v.strip() for v in x.split(',') if v.strip() and v.strip() != 'nan'])
-                prod_exp = prod_clean.explode('Variant')
+        if not merged_df.empty:
+            merged_df['Prod_to_Fuel'] = np.where(merged_df['Total_Fuel_KG'] > 0, merged_df['Total_Production_KG'] / merged_df['Total_Fuel_KG'], np.nan)
+            merged_df['Prod_to_Steam'] = np.where(merged_df['Total_Steam_Tons'] > 0, merged_df['Total_Production_KG'] / (merged_df['Total_Steam_Tons'] * 1000), np.nan)
+            
+            tab_fuel, tab_steam, tab_lines = st.tabs(["Production to Fuel Ratio", "Production to Steam Ratio", "Line-wise Variations"])
+            
+            with tab_fuel:
+                st.markdown("### Total Production vs Fuel Consumption")
+                c1, c2 = st.columns(2)
+                c1.metric("Average Production to Fuel Ratio", f"{merged_df['Prod_to_Fuel'].mean(skipna=True):.3f} kg/kg")
                 
-                variant_counts = prod_exp['Variant'].value_counts().reset_index()
-                variant_counts.columns = ['Variant', 'Days Active']
+                fig_pf = make_subplots(specs=[[{"secondary_y": True}]])
+                fig_pf.add_trace(go.Scatter(x=merged_df['Date'], y=merged_df['Total_Production_KG'], name='Total Production (KG)', fill='tozeroy', line=dict(color='#2ca02c')), secondary_y=False)
+                fig_pf.add_trace(go.Scatter(x=merged_df['Date'], y=merged_df['Total_Fuel_KG'], name='Total Fuel (KG)', line=dict(color='#d62728', dash='dash', width=2)), secondary_y=True)
+                fig_pf.update_layout(template="plotly_white", hovermode="x unified", height=450, xaxis_title="Date", margin=dict(t=40, b=50))
+                fig_pf = set_legend_bottom(fig_pf)
+                st.plotly_chart(fig_pf, use_container_width=True)
                 
-                col_freq, col_box = st.columns([1, 1.5])
+                st.markdown("#### Production to Fuel Ratio Over Time")
+                fig_pfr = go.Figure(go.Scatter(x=merged_df['Date'], y=merged_df['Prod_to_Fuel'], name='Prod to Fuel Ratio', line=dict(color='#ff7f0e', width=3)))
+                fig_pfr.update_layout(template="plotly_white", hovermode="x unified", height=350, xaxis_title="Date", yaxis_title="Ratio (kg/kg)", margin=dict(t=10, b=50))
+                fig_pfr = set_legend_bottom(fig_pfr)
+                st.plotly_chart(fig_pfr, use_container_width=True)
                 
-                with col_freq:
-                    fig_freq = go.Figure(go.Bar(x=variant_counts['Variant'], y=variant_counts['Days Active'], marker_color='#1f77b4'))
-                    fig_freq.update_layout(title="Product Variant Frequency", template="plotly_white", yaxis_title="Days Active" if time_res == "Day-wise" else "Months Active", xaxis_tickangle=-45, height=450)
-                    st.plotly_chart(fig_freq, use_container_width=True)
+                if time_res == "Day-wise":
+                    st.markdown("#### Multi-Line Scatterplot: Production vs Fuel")
+                    fig_scatter_fuel = go.Figure()
+                    fig_scatter_fuel.add_trace(go.Scatter(x=merged_df['Total_Production_KG'], y=merged_df['Total_Fuel_KG'], mode='markers', name='Aggregate Total', marker=dict(color='black', symbol='diamond', size=8)))
+                    for i, line in enumerate(sel_lines):
+                        line_data = prod_day_df[prod_day_df['Line'] == line].groupby('Date')['Volume'].sum().reset_index()
+                        line_merged = pd.merge(line_data, sf_day_df[['Date', 'Total_Fuel_KG']], on='Date', how='inner')
+                        fig_scatter_fuel.add_trace(go.Scatter(x=line_merged['Volume'], y=line_merged['Total_Fuel_KG'], mode='markers', name=line, marker=dict(color=MULTI_COLORS[i % len(MULTI_COLORS)], size=6, opacity=0.7)))
+                    fig_scatter_fuel.update_layout(template="plotly_white", height=450, xaxis_title="Production Volume (KG)", yaxis_title="Total Plant Fuel (KG)", margin=dict(t=10, b=50))
+                    fig_scatter_fuel = set_legend_bottom(fig_scatter_fuel)
+                    st.plotly_chart(fig_scatter_fuel, use_container_width=True)
+                
+            with tab_steam:
+                st.markdown("### Total Production vs Steam Consumption")
+                c1, c2 = st.columns(2)
+                c1.metric("Average Production to Steam Ratio", f"{merged_df['Prod_to_Steam'].mean(skipna=True):.3f} kg/kg")
+                
+                fig_ps = make_subplots(specs=[[{"secondary_y": True}]])
+                fig_ps.add_trace(go.Scatter(x=merged_df['Date'], y=merged_df['Total_Production_KG'], name='Total Production (KG)', fill='tozeroy', line=dict(color='#1f77b4')), secondary_y=False)
+                fig_ps.add_trace(go.Scatter(x=merged_df['Date'], y=merged_df['Total_Steam_Tons'] * 1000, name='Total Steam (KG)', line=dict(color='#9467bd', dash='dash', width=2)), secondary_y=True)
+                fig_ps.update_layout(template="plotly_white", hovermode="x unified", height=450, xaxis_title="Date", margin=dict(t=40, b=50))
+                fig_ps = set_legend_bottom(fig_ps)
+                st.plotly_chart(fig_ps, use_container_width=True)
+                
+                st.markdown("#### Production to Steam Ratio Over Time")
+                fig_psr = go.Figure(go.Scatter(x=merged_df['Date'], y=merged_df['Prod_to_Steam'], name='Prod to Steam Ratio', line=dict(color='#17becf', width=3)))
+                fig_psr.update_layout(template="plotly_white", hovermode="x unified", height=350, xaxis_title="Date", yaxis_title="Ratio (kg/kg)", margin=dict(t=10, b=50))
+                fig_psr = set_legend_bottom(fig_psr)
+                st.plotly_chart(fig_psr, use_container_width=True)
+                
+                if time_res == "Day-wise":
+                    st.markdown("#### Multi-Line Scatterplot: Production vs Steam")
+                    fig_scatter_steam = go.Figure()
+                    fig_scatter_steam.add_trace(go.Scatter(x=merged_df['Total_Production_KG'], y=merged_df['Total_Steam_Tons'] * 1000, mode='markers', name='Aggregate Total', marker=dict(color='black', symbol='diamond', size=8)))
+                    for i, line in enumerate(sel_lines):
+                        line_data = prod_day_df[prod_day_df['Line'] == line].groupby('Date')['Volume'].sum().reset_index()
+                        line_merged = pd.merge(line_data, sf_day_df[['Date', 'Total_Steam_Tons']], on='Date', how='inner')
+                        fig_scatter_steam.add_trace(go.Scatter(x=line_merged['Volume'], y=line_merged['Total_Steam_Tons'] * 1000, mode='markers', name=line, marker=dict(color=MULTI_COLORS[i % len(MULTI_COLORS)], size=6, opacity=0.7)))
+                    fig_scatter_steam.update_layout(template="plotly_white", height=450, xaxis_title="Production Volume (KG)", yaxis_title="Total Plant Steam (KG)", margin=dict(t=10, b=50))
+                    fig_scatter_steam = set_legend_bottom(fig_scatter_steam)
+                    st.plotly_chart(fig_scatter_steam, use_container_width=True)
+                
+            with tab_lines:
+                if time_res == "Month-wise":
+                    st.warning("Line-wise permutation mapping requires Daily shift data. Please toggle Time Resolution to 'Day-wise'.")
+                else:
+                    st.markdown("### Line-wise Production Volume")
                     
-                with col_box:
-                    fig_box = go.Figure()
-                    for variant in variant_counts['Variant']:
-                        v_data = prod_exp[prod_exp['Variant'] == variant]['Volume']
-                        fig_box.add_trace(go.Box(y=v_data, name=variant))
-                    fig_box.update_layout(title="Line Volume Range by Active Variant", template="plotly_white", yaxis_title="Production Volume (KG)", xaxis_tickangle=-45, height=450, showlegend=False)
-                    st.plotly_chart(fig_box, use_container_width=True)
+                    if sel_lines:
+                        fig_lines = go.Figure()
+                        for i, ln in enumerate(sel_lines):
+                            ln_df = prod_day_df[prod_day_df['Line'] == ln].groupby('Date')['Volume'].sum().reset_index()
+                            c_color = MULTI_COLORS[i % len(MULTI_COLORS)]
+                            fig_lines.add_trace(go.Scatter(x=ln_df['Date'], y=ln_df['Volume'], name=ln, line=dict(color=c_color, width=2)))
+                        
+                        fig_lines.update_layout(template="plotly_white", hovermode="x unified", height=450, xaxis_title="Date", yaxis_title="Production Volume (KG)", margin=dict(t=10, b=50))
+                        fig_lines = set_legend_bottom(fig_lines)
+                        st.plotly_chart(fig_lines, use_container_width=True)
+                        
+                        st.markdown("---")
+                        st.markdown("### Product Variant Permutations & Ranges")
+                        st.info("Because multiple product variants run on the same line during a single shift, this analyzes the frequency and total line volume output when specific products are active.")
+                        
+                        prod_clean = prod_day_df[prod_day_df['Line'].isin(sel_lines)].dropna(subset=['Desc'])
+                        # Split by commas and strip whitespace to extract individual products cleanly
+                        prod_clean['Variant'] = prod_clean['Desc'].astype(str).apply(lambda x: [v.strip() for v in x.split(',') if v.strip() and v.strip() != 'nan'])
+                        prod_exp = prod_clean.explode('Variant')
+                        
+                        variant_counts = prod_exp['Variant'].value_counts().reset_index()
+                        variant_counts.columns = ['Variant', 'Days Active']
+                        
+                        col_freq, col_box = st.columns([1, 1.5])
+                        
+                        with col_freq:
+                            fig_freq = go.Figure(go.Bar(x=variant_counts['Variant'], y=variant_counts['Days Active'], marker_color='#1f77b4'))
+                            fig_freq.update_layout(title="Product Variant Frequency", template="plotly_white", yaxis_title="Days Active", xaxis_tickangle=-45, height=450)
+                            st.plotly_chart(fig_freq, use_container_width=True)
+                            
+                        with col_box:
+                            fig_box = go.Figure()
+                            for variant in variant_counts['Variant']:
+                                v_data = prod_exp[prod_exp['Variant'] == variant]['Volume']
+                                fig_box.add_trace(go.Box(y=v_data, name=variant))
+                            fig_box.update_layout(title="Line Volume Range by Active Variant", template="plotly_white", yaxis_title="Production Volume (KG)", xaxis_tickangle=-45, height=450, showlegend=False)
+                            st.plotly_chart(fig_box, use_container_width=True)
