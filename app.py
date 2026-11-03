@@ -12,7 +12,7 @@ warnings.filterwarnings('ignore')
 st.set_page_config(page_title="Boiler Analytics Platform", layout="wide", initial_sidebar_state="expanded")
 
 # ==============================================================================
-# UI/UX: PREMIUM APPLE-STYLE SIDEBAR NAVIGATION CSS 
+# UI/UX: PREMIUM APPLE-STYLE SIDEBAR NAVIGATION CSS
 # ==============================================================================
 st.markdown("""
 <style>
@@ -140,6 +140,53 @@ def process_local_files(data_dir='./boiler_data'):
     return cache, all_params, (all_dates.min().date(), all_dates.max().date())
 
 @st.cache_data
+def load_audit_data(data_dir='./boiler_data'):
+    """ Specialized parser designed explicitly for Forbes Marshall Audit Reports """
+    data_path = Path(data_dir)
+    valid_files = list(data_path.glob('*.xlsx')) + list(data_path.glob('*.xls'))
+    
+    prod_df = pd.DataFrame()
+    sf_df = pd.DataFrame()
+    
+    for f in valid_files:
+        try:
+            xls = pd.ExcelFile(f)
+            if 'Day Wise Production Data' in xls.sheet_names and 'Steam Generation & Fuel Consump' in xls.sheet_names:
+                # 1. Process Horizontal Stacked Production Data
+                raw_prod = pd.read_excel(xls, sheet_name='Day Wise Production Data', header=None)
+                all_data = []
+                row2 = raw_prod.iloc[2].values
+                date_cols = [i for i, val in enumerate(row2) if str(val).strip() == 'Date']
+                
+                for dc in date_cols:
+                    if dc + 3 < len(raw_prod.columns):
+                        chunk = raw_prod.iloc[3:, [dc, dc+1, dc+2, dc+3]].copy()
+                        chunk.columns = ['Date', 'Line', 'Desc', 'Volume']
+                        chunk['Date'] = pd.to_datetime(chunk['Date'], errors='coerce')
+                        chunk['Date'] = chunk['Date'].ffill() # Fill merged date cells
+                        chunk = chunk.dropna(subset=['Line', 'Volume'])
+                        all_data.append(chunk)
+                        
+                if all_data:
+                    prod_df = pd.concat(all_data, ignore_index=True)
+                    prod_df['Volume'] = pd.to_numeric(prod_df['Volume'], errors='coerce').fillna(0)
+                
+                # 2. Process Steam & Fuel Base Ratios
+                raw_sf = pd.read_excel(xls, sheet_name='Steam Generation & Fuel Consump', header=None)
+                sf_temp = raw_sf.iloc[4:, [2, 3, 4, 5, 6, 7, 8]].copy()
+                sf_temp.columns = ['Date', 'B1_Fuel', 'B2_Fuel', 'B3_Fuel', 'B1_Steam', 'B2_Steam', 'B3_Steam']
+                sf_temp['Date'] = pd.to_datetime(sf_temp['Date'], errors='coerce')
+                sf_temp = sf_temp.dropna(subset=['Date'])
+                for c in sf_temp.columns[1:]:
+                    sf_temp[c] = pd.to_numeric(sf_temp[c], errors='coerce').fillna(0)
+                sf_df = sf_temp
+                break 
+        except Exception:
+            pass
+            
+    return sf_df, prod_df
+
+@st.cache_data
 def extract_events(data_cache, min_dur_minutes):
     events = []
     idx = 1
@@ -242,6 +289,8 @@ app_mode = st.sidebar.radio("Navigation", [
     "System Cross-Analysis",
     "Parameter Correlation Matrix",
     "Mass & Energy Balance",
+    "Steam to Fuel Analysis",
+    "Production Efficiency",
     "Data Management"
 ], label_visibility="collapsed")
 
@@ -264,10 +313,15 @@ if app_mode == "Data Management":
         st.subheader("Boiler 3")
         b3_file = st.file_uploader("Upload Data for Boiler 3", accept_multiple_files=False, key="up_b3", label_visibility="collapsed")
 
+    # Audit Report Uploader
+    st.markdown("### Forbes Marshall Audit Report")
+    audit_file = st.file_uploader("Upload Production & Fuel Logs (Excel)", accept_multiple_files=False, key="up_audit")
+
     if st.button("Process & Save Active Uploads", type="primary"):
         data_dir = Path('./boiler_data')
         data_dir.mkdir(parents=True, exist_ok=True)
         files_saved = 0
+        
         if b1_file:
             with open(data_dir / f"Boiler1_{b1_file.name}", "wb") as f: f.write(b1_file.getvalue())
             files_saved += 1
@@ -276,6 +330,9 @@ if app_mode == "Data Management":
             files_saved += 1
         if b3_file:
             with open(data_dir / f"Boiler3_{b3_file.name}", "wb") as f: f.write(b3_file.getvalue())
+            files_saved += 1
+        if audit_file:
+            with open(data_dir / f"Forbes Marshall Audit Report. (1).xlsx", "wb") as f: f.write(audit_file.getvalue())
             files_saved += 1
             
         if files_saved > 0:
@@ -919,7 +976,7 @@ elif app_mode == "Parameter Correlation Matrix":
                 first_z, valid_cols = None, None
                 current_d = tl_start
                 
-                # Robustly find exact mapping for this specific boiler dynamically
+                # Robust Dynamic column hunt for trend tracker to support multi-boiler mapping variation
                 b_trace_p1 = find_matching_param(b_df.columns, trace_p1)
                 b_trace_p2 = find_matching_param(b_df.columns, trace_p2)
                 
@@ -1076,3 +1133,141 @@ elif app_mode == "Mass & Energy Balance":
         st.plotly_chart(fig_sankey, use_container_width=True)
     else:
         st.warning("Table is empty. Please add parameters to generate the diagram.")
+
+# ==============================================================================
+# 7. STEAM TO FUEL ANALYSIS
+# ==============================================================================
+elif app_mode == "Steam to Fuel Analysis":
+    st.title("Steam to Fuel Analysis")
+    
+    sf_df, prod_df = load_audit_data('./boiler_data')
+    if sf_df.empty:
+        st.warning("Audit Report Data not found. Please upload 'Forbes Marshall Audit Report. (1).xlsx' in Data Management.")
+    else:
+        st.markdown("### Boiler Efficiency (Steam to Fuel Ratio)")
+        st.info("Calculated as (Steam in Tons * 1000) / Fuel in KG. A standard biomass boiler ratio is typically between 4.0 and 5.0.")
+        
+        df = sf_df.copy().sort_values('Date')
+        
+        df['B1_Ratio'] = np.where(df['B1_Fuel'] > 0, (df['B1_Steam'] * 1000) / df['B1_Fuel'], 0)
+        df['B2_Ratio'] = np.where(df['B2_Fuel'] > 0, (df['B2_Steam'] * 1000) / df['B2_Fuel'], 0)
+        df['B3_Ratio'] = np.where(df['B3_Fuel'] > 0, (df['B3_Steam'] * 1000) / df['B3_Fuel'], 0)
+        
+        df['Total_Fuel'] = df['B1_Fuel'] + df['B2_Fuel'] + df['B3_Fuel']
+        df['Total_Steam'] = df['B1_Steam'] + df['B2_Steam'] + df['B3_Steam']
+        df['Total_Ratio'] = np.where(df['Total_Fuel'] > 0, (df['Total_Steam'] * 1000) / df['Total_Fuel'], 0)
+        
+        c1, c2, c3, c4 = st.columns(4)
+        c1.metric("Boiler 1 Avg Ratio", f"{df.loc[df['B1_Ratio']>0, 'B1_Ratio'].mean():.2f}")
+        c2.metric("Boiler 2 Avg Ratio", f"{df.loc[df['B2_Ratio']>0, 'B2_Ratio'].mean():.2f}")
+        c3.metric("Boiler 3 Avg Ratio", f"{df.loc[df['B3_Ratio']>0, 'B3_Ratio'].mean():.2f}")
+        c4.metric("Plant Total Avg Ratio", f"{df.loc[df['Total_Ratio']>0, 'Total_Ratio'].mean():.2f}")
+        
+        st.markdown("#### Ratio Variation Over Time")
+        fig_r = go.Figure()
+        fig_r.add_trace(go.Scatter(x=df['Date'], y=df['B1_Ratio'], name='Boiler 1 Ratio', line=dict(color=B_COLORS['Boiler 1'])))
+        fig_r.add_trace(go.Scatter(x=df['Date'], y=df['B2_Ratio'], name='Boiler 2 Ratio', line=dict(color=B_COLORS['Boiler 2'])))
+        fig_r.add_trace(go.Scatter(x=df['Date'], y=df['B3_Ratio'], name='Boiler 3 Ratio', line=dict(color=B_COLORS['Boiler 3'])))
+        fig_r.add_trace(go.Scatter(x=df['Date'], y=df['Total_Ratio'], name='Total Plant Ratio', line=dict(color='#000000', dash='dot', width=3)))
+        
+        fig_r.update_layout(template="plotly_white", hovermode="x unified", height=450, yaxis_title="Steam to Fuel Ratio (kg/kg)", margin=dict(t=40, b=50))
+        fig_r = set_legend_bottom(fig_r)
+        st.plotly_chart(fig_r, use_container_width=True)
+        
+        st.markdown("#### Steam vs Fuel Raw Values (Total Aggregate)")
+        fig_raw = make_subplots(specs=[[{"secondary_y": True}]])
+        fig_raw.add_trace(go.Scatter(x=df['Date'], y=df['Total_Steam'], name='Total Steam (Tons)', line=dict(color=B_COLORS['Boiler 1'])), secondary_y=False)
+        fig_raw.add_trace(go.Scatter(x=df['Date'], y=df['Total_Fuel'], name='Total Fuel (KG)', line=dict(color=SUM_LINE, dash='dot')), secondary_y=True)
+        fig_raw.update_layout(template="plotly_white", hovermode="x unified", height=400, margin=dict(t=10, b=50))
+        fig_raw = set_legend_bottom(fig_raw)
+        st.plotly_chart(fig_raw, use_container_width=True)
+
+# ==============================================================================
+# 8. PRODUCTION EFFICIENCY
+# ==============================================================================
+elif app_mode == "Production Efficiency":
+    st.title("Production Efficiency Analysis")
+    
+    sf_df, prod_df = load_audit_data('./boiler_data')
+    if sf_df.empty or prod_df.empty:
+        st.warning("Audit Report Data not found. Please upload 'Forbes Marshall Audit Report. (1).xlsx' in Data Management.")
+    else:
+        daily_prod = prod_df.groupby('Date')['Volume'].sum().reset_index()
+        daily_prod.rename(columns={'Volume': 'Total_Production_KG'}, inplace=True)
+        
+        df_sf = sf_df.copy()
+        df_sf['Total_Fuel_KG'] = df_sf['B1_Fuel'] + df_sf['B2_Fuel'] + df_sf['B3_Fuel']
+        df_sf['Total_Steam_Tons'] = df_sf['B1_Steam'] + df_sf['B2_Steam'] + df_sf['B3_Steam']
+        
+        merged_df = pd.merge(daily_prod, df_sf[['Date', 'Total_Fuel_KG', 'Total_Steam_Tons']], on='Date', how='inner')
+        merged_df['Prod_to_Fuel'] = np.where(merged_df['Total_Fuel_KG'] > 0, merged_df['Total_Production_KG'] / merged_df['Total_Fuel_KG'], 0)
+        merged_df['Prod_to_Steam'] = np.where(merged_df['Total_Steam_Tons'] > 0, merged_df['Total_Production_KG'] / (merged_df['Total_Steam_Tons'] * 1000), 0)
+        
+        tab_fuel, tab_steam, tab_lines = st.tabs(["Production vs Fuel", "Production vs Steam", "Line-wise Variation"])
+        
+        with tab_fuel:
+            st.markdown("### Total Production vs Fuel Consumption")
+            
+            c1, c2 = st.columns(2)
+            c1.metric("Average Production to Fuel Ratio", f"{merged_df.loc[merged_df['Prod_to_Fuel']>0, 'Prod_to_Fuel'].mean():.3f} kg/kg")
+            
+            fig_pf = make_subplots(specs=[[{"secondary_y": True}]])
+            fig_pf.add_trace(go.Scatter(x=merged_df['Date'], y=merged_df['Total_Production_KG'], name='Total Production (KG)', fill='tozeroy', line=dict(color='#2ca02c')), secondary_y=False)
+            fig_pf.add_trace(go.Scatter(x=merged_df['Date'], y=merged_df['Total_Fuel_KG'], name='Total Fuel (KG)', line=dict(color='#d62728', dash='dash', width=2)), secondary_y=True)
+            fig_pf.update_layout(template="plotly_white", hovermode="x unified", height=450, margin=dict(t=40, b=50))
+            fig_pf = set_legend_bottom(fig_pf)
+            st.plotly_chart(fig_pf, use_container_width=True)
+            
+            st.markdown("#### Production to Fuel Ratio Over Time")
+            fig_pfr = go.Figure(go.Scatter(x=merged_df['Date'], y=merged_df['Prod_to_Fuel'], name='Prod to Fuel Ratio', line=dict(color='#ff7f0e', width=3)))
+            fig_pfr.update_layout(template="plotly_white", hovermode="x unified", height=350, yaxis_title="Ratio (kg/kg)", margin=dict(t=10, b=50))
+            fig_pfr = set_legend_bottom(fig_pfr)
+            st.plotly_chart(fig_pfr, use_container_width=True)
+            
+        with tab_steam:
+            st.markdown("### Total Production vs Steam Consumption")
+            
+            c1, c2 = st.columns(2)
+            c1.metric("Average Production to Steam Ratio", f"{merged_df.loc[merged_df['Prod_to_Steam']>0, 'Prod_to_Steam'].mean():.3f} kg/kg")
+            
+            fig_ps = make_subplots(specs=[[{"secondary_y": True}]])
+            fig_ps.add_trace(go.Scatter(x=merged_df['Date'], y=merged_df['Total_Production_KG'], name='Total Production (KG)', fill='tozeroy', line=dict(color='#1f77b4')), secondary_y=False)
+            fig_ps.add_trace(go.Scatter(x=merged_df['Date'], y=merged_df['Total_Steam_Tons'] * 1000, name='Total Steam (KG)', line=dict(color='#9467bd', dash='dash', width=2)), secondary_y=True)
+            fig_ps.update_layout(template="plotly_white", hovermode="x unified", height=450, margin=dict(t=40, b=50))
+            fig_ps = set_legend_bottom(fig_ps)
+            st.plotly_chart(fig_ps, use_container_width=True)
+            
+            st.markdown("#### Production to Steam Ratio Over Time")
+            fig_psr = go.Figure(go.Scatter(x=merged_df['Date'], y=merged_df['Prod_to_Steam'], name='Prod to Steam Ratio', line=dict(color='#17becf', width=3)))
+            fig_psr.update_layout(template="plotly_white", hovermode="x unified", height=350, yaxis_title="Ratio (kg/kg)", margin=dict(t=10, b=50))
+            fig_psr = set_legend_bottom(fig_psr)
+            st.plotly_chart(fig_psr, use_container_width=True)
+            
+        with tab_lines:
+            st.markdown("### Line-wise Production Variation")
+            unique_lines = prod_df['Line'].dropna().unique().tolist()
+            sel_lines = st.multiselect("Select Production Lines", unique_lines, default=unique_lines)
+            
+            if sel_lines:
+                fig_lines = go.Figure()
+                for i, ln in enumerate(sel_lines):
+                    ln_df = prod_df[prod_df['Line'] == ln].groupby('Date')['Volume'].sum().reset_index()
+                    c_color = MULTI_COLORS[i % len(MULTI_COLORS)]
+                    fig_lines.add_trace(go.Scatter(x=ln_df['Date'], y=ln_df['Volume'], name=ln, line=dict(color=c_color, width=2)))
+                
+                fig_lines.update_layout(template="plotly_white", hovermode="x unified", height=500, yaxis_title="Production Volume (KG)", margin=dict(t=10, b=50))
+                fig_lines = set_legend_bottom(fig_lines)
+                st.plotly_chart(fig_lines, use_container_width=True)
+                
+                st.markdown("#### Production Volume by Product Description")
+                unique_desc = [d for d in prod_df['Desc'].dropna().unique() if str(d).strip() != '']
+                sel_desc = st.multiselect("Select Product Descriptions", unique_desc, default=unique_desc[:3] if len(unique_desc)>3 else unique_desc)
+                if sel_desc:
+                    fig_desc = go.Figure()
+                    for i, d in enumerate(sel_desc):
+                        d_df = prod_df[prod_df['Desc'] == d].groupby('Date')['Volume'].sum().reset_index()
+                        c_color = MULTI_COLORS[(i+4) % len(MULTI_COLORS)]
+                        fig_desc.add_trace(go.Scatter(x=d_df['Date'], y=d_df['Volume'], name=d, line=dict(color=c_color, width=2, dash='dot')))
+                    fig_desc.update_layout(template="plotly_white", hovermode="x unified", height=450, margin=dict(t=10, b=50))
+                    fig_desc = set_legend_bottom(fig_desc)
+                    st.plotly_chart(fig_desc, use_container_width=True)
