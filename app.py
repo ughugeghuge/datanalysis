@@ -100,10 +100,16 @@ def process_local_files(data_dir='./boiler_data'):
     data_path.mkdir(parents=True, exist_ok=True)
     all_files = list(data_path.glob('*.*'))
     valid_files = [f for f in all_files if f.suffix in ['.xlsx', '.xls', '.csv']]
+    
     if not valid_files: return None, None, []
     
     boiler_groups = {'Boiler 1': [], 'Boiler 2': [], 'Boiler 3': []}
     for f in valid_files:
+        # Prevent the Audit/Production file from being misclassified as a boiler log
+        f_lower = f.name.lower()
+        if 'audit' in f_lower or 'fuel' in f_lower or 'production' in f_lower:
+            continue
+            
         if '1' in f.name: boiler_groups['Boiler 1'].append(f)
         elif '2' in f.name: boiler_groups['Boiler 2'].append(f)
         elif '3' in f.name: boiler_groups['Boiler 3'].append(f)
@@ -290,7 +296,7 @@ if all_params:
         if p_lower == 'steam flow meter': default_flow_idx = i
         elif ('steam flow' in p_lower or 'flow meter' in p_lower) and all_params[default_flow_idx].lower() != 'steam flow meter': default_flow_idx = i
         
-        # Strict logic for Meter A (must not contain 'tot' or 'totalizer')
+        # Strict logic for Meter A
         if p_lower == 'steam flow meter a': flow_a_idx = i
         elif 'flow meter a' in p_lower and 'tot' not in p_lower and flow_a_idx is None: flow_a_idx = i
             
@@ -434,7 +440,7 @@ elif app_mode == "Boiler operation and Flow":
                 for b_name in target_boilers:
                     if b_name not in cache: continue
                     b_df = cache[b_name]
-                    w_df = b_df[(b_df['timestamp'] >= ev['window_start']) & (b_df['timestamp'] <= end_dt)] if 'end_dt' in locals() else b_df[(b_df['timestamp'] >= ev['window_start']) & (b_df['timestamp'] <= ev['window_end'])]
+                    w_df = b_df[(b_df['timestamp'] >= ev['window_start']) & (b_df['timestamp'] <= ev['window_end'])]
                     
                     if not w_df.empty:
                         if len(target_params) <= 2:
@@ -995,7 +1001,6 @@ elif app_mode == "Parameter Correlation Matrix":
                 first_z, valid_cols = None, None
                 current_d = tl_start
                 
-                # Robustly find exact mapping for this specific boiler dynamically
                 b_trace_p1 = find_matching_param(b_df.columns, trace_p1)
                 b_trace_p2 = find_matching_param(b_df.columns, trace_p2)
                 
@@ -1141,31 +1146,6 @@ elif app_mode == "Mass & Energy Balance":
         links_tgt = [nodes.index(str(tgt)) for tgt in edited_df['Target'].dropna()]
         links_val = pd.to_numeric(edited_df['Value'].dropna(), errors='coerce').fillna(0).tolist()
         
-        # Exact topological depth logic to force SankeyMATIC left-to-right cascades
-        depths = {i: 0 for i in range(len(nodes))}
-        changed = True
-        loops = 0
-        while changed and loops < 100:
-            changed = False
-            for s, t in zip(links_src, links_tgt):
-                if depths[s] + 1 > depths[t]:
-                    depths[t] = depths[s] + 1
-                    changed = True
-            loops += 1
-            
-        max_depth = max(depths.values()) if depths else 1
-        x_coords = [depths[i] / max_depth if max_depth > 0 else 0.5 for i in range(len(nodes))]
-        
-        y_coords = [0.5] * len(nodes)
-        depth_groups = defaultdict(list)
-        for i in range(len(nodes)):
-            depth_groups[depths[i]].append(i)
-            
-        for d, indices in depth_groups.items():
-            count = len(indices)
-            for j, idx in enumerate(indices):
-                y_coords[idx] = (j + 1) / (count + 1)
-        
         node_colors = ['#e377c2', '#7f7f7f', '#bcbd22', '#17becf', '#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd', '#8c564b']
         dynamic_node_colors = [node_colors[i % len(node_colors)] for i in range(len(nodes))]
         link_colors = [dynamic_node_colors[src].replace('rgb', 'rgba').replace(')', ', 0.4)') if 'rgb' in dynamic_node_colors[src] else 'rgba(180, 180, 180, 0.4)' for src in links_src]
@@ -1177,9 +1157,7 @@ elif app_mode == "Mass & Energy Balance":
                 thickness = 40,
                 line = dict(color = "black", width = 0.5),
                 label = nodes,
-                color = dynamic_node_colors,
-                x = x_coords,
-                y = y_coords
+                color = dynamic_node_colors
             ),
             link = dict(
                 source = links_src,
@@ -1199,270 +1177,3 @@ elif app_mode == "Mass & Energy Balance":
         st.plotly_chart(fig_sankey, use_container_width=True)
     else:
         st.warning("Table is empty. Please add parameters to generate the diagram.")
-
-# ==============================================================================
-# 7. STEAM TO FUEL ANALYSIS
-# ==============================================================================
-elif app_mode == "Steam to Fuel Analysis":
-    st.title("Steam to Fuel Analysis")
-    
-    sf_day_df, prod_day_df, sf_mo_df, prod_mo_df = load_audit_data('./boiler_data')
-    if sf_day_df.empty:
-        st.warning("Audit Report Data not found. Please upload 'Fuel_steam_Production.xlsx' in Data Management.")
-    else:
-        time_res = st.radio("Time Resolution", ["Day-wise", "Month-wise"], horizontal=True)
-        
-        if time_res == "Month-wise" and not sf_mo_df.empty:
-            df = sf_mo_df.copy().sort_values('Date')
-        else:
-            df = sf_day_df.copy().sort_values('Date')
-            
-        with st.expander("Ratio Configuration", expanded=True):
-            c_num, c_den = st.columns(2)
-            steam_sources = c_num.multiselect("Steam Sources", ['B1_Steam', 'B2_Steam', 'B3_Steam'], default=['B1_Steam', 'B2_Steam', 'B3_Steam'])
-            fuel_sources = c_den.multiselect("Fuel Sources", ['B1_Fuel', 'B2_Fuel', 'B3_Fuel'], default=['B1_Fuel', 'B2_Fuel', 'B3_Fuel'])
-            
-            c_type1, c_type2 = st.columns(2)
-            num_type = c_type1.selectbox("Numerator Metric", ["Steam", "Fuel"], index=0)
-            den_type = c_type2.selectbox("Denominator Metric", ["Fuel", "Steam"], index=0)
-            
-            if not steam_sources or not fuel_sources:
-                st.warning("Please select at least one steam source and one fuel source.")
-                st.stop()
-
-        df['Total_Fuel'] = df[fuel_sources].sum(axis=1)
-        df['Total_Steam'] = df[steam_sources].sum(axis=1)
-        
-        # Prevent 0 values from polluting the math/average and plunging charts to zero
-        for c in ['B1_Fuel', 'B2_Fuel', 'B3_Fuel', 'B1_Steam', 'B2_Steam', 'B3_Steam', 'Total_Fuel', 'Total_Steam']:
-            if c in df.columns:
-                df[c] = df[c].replace(0, np.nan)
-        
-        if num_type == "Steam" and den_type == "Fuel":
-            df['B1_Ratio'] = (df['B1_Steam'] * 1000) / df['B1_Fuel']
-            df['B2_Ratio'] = (df['B2_Steam'] * 1000) / df['B2_Fuel']
-            df['B3_Ratio'] = (df['B3_Steam'] * 1000) / df['B3_Fuel']
-            df['Total_Ratio'] = (df['Total_Steam'] * 1000) / df['Total_Fuel']
-            y_title = "Steam to Fuel Ratio (kg/kg)"
-        else:
-            df['B1_Ratio'] = df['B1_Fuel'] / (df['B1_Steam'] * 1000)
-            df['B2_Ratio'] = df['B2_Fuel'] / (df['B2_Steam'] * 1000)
-            df['B3_Ratio'] = df['B3_Fuel'] / (df['B3_Steam'] * 1000)
-            df['Total_Ratio'] = df['Total_Fuel'] / (df['Total_Steam'] * 1000)
-            y_title = "Fuel to Steam Ratio (kg/kg)"
-            
-        c1, c2, c3, c4 = st.columns(4)
-        c1.metric("Boiler 1 Avg Ratio", f"{df['B1_Ratio'].mean(skipna=True):.2f}")
-        c2.metric("Boiler 2 Avg Ratio", f"{df['B2_Ratio'].mean(skipna=True):.2f}")
-        c3.metric("Boiler 3 Avg Ratio", f"{df['B3_Ratio'].mean(skipna=True):.2f}")
-        c4.metric("Configured Plant Avg Ratio", f"{df['Total_Ratio'].mean(skipna=True):.2f}")
-        
-        st.markdown("#### Ratio Variation Over Time")
-        fig_r = go.Figure()
-        fig_r.add_trace(go.Scatter(x=df['Date'], y=df['B1_Ratio'], name='Boiler 1 Ratio', mode='lines+markers', line=dict(color=B_COLORS['Boiler 1'])))
-        fig_r.add_trace(go.Scatter(x=df['Date'], y=df['B2_Ratio'], name='Boiler 2 Ratio', mode='lines+markers', line=dict(color=B_COLORS['Boiler 2'])))
-        fig_r.add_trace(go.Scatter(x=df['Date'], y=df['B3_Ratio'], name='Boiler 3 Ratio', mode='lines+markers', line=dict(color=B_COLORS['Boiler 3'])))
-        fig_r.add_trace(go.Scatter(x=df['Date'], y=df['Total_Ratio'], name='Configured Plant Ratio', mode='lines+markers', line=dict(color='#000000', dash='dot', width=3)))
-        
-        fig_r.update_layout(template="plotly_white", hovermode="x unified", height=450, xaxis_title="Date", yaxis_title=y_title, margin=dict(t=40, b=50))
-        fig_r = set_legend_bottom(fig_r)
-        st.plotly_chart(fig_r, use_container_width=True)
-        
-        st.markdown("#### Steam vs Fuel Raw Values (Configured Aggregate)")
-        fig_raw = make_subplots(specs=[[{"secondary_y": True}]])
-        fig_raw.add_trace(go.Scatter(x=df['Date'], y=df['Total_Steam'], name='Configured Steam (Tons)', mode='lines+markers', line=dict(color=B_COLORS['Boiler 1'])), secondary_y=False)
-        fig_raw.add_trace(go.Scatter(x=df['Date'], y=df['Total_Fuel'], name='Configured Fuel (KG)', mode='lines+markers', line=dict(color=SUM_LINE, dash='dot')), secondary_y=True)
-        fig_raw.update_layout(template="plotly_white", hovermode="x unified", height=400, xaxis_title="Date", margin=dict(t=10, b=50))
-        fig_raw = set_legend_bottom(fig_raw)
-        st.plotly_chart(fig_raw, use_container_width=True)
-
-# ==============================================================================
-# 8. PRODUCTION EFFICIENCY
-# ==============================================================================
-elif app_mode == "Production Efficiency":
-    st.title("Production Efficiency Analysis")
-    
-    sf_day_df, prod_day_df, sf_mo_df, prod_mo_df = load_audit_data('./boiler_data')
-    if sf_day_df.empty or prod_day_df.empty:
-        st.warning("Audit Report Data not found. Please upload 'Fuel_steam_Production.xlsx' in Data Management.")
-    else:
-        c1, c2 = st.columns([1, 2])
-        time_res = c1.radio("Time Resolution", ["Day-wise", "Month-wise"], horizontal=True)
-        
-        if time_res == "Day-wise":
-            unique_lines = prod_day_df['Line'].dropna().unique().tolist()
-            with st.expander("Ratio Configuration", expanded=True):
-                c_num, c_den1, c_den2 = st.columns(3)
-                sel_lines = c_num.multiselect("Production Lines", unique_lines, default=unique_lines)
-                fuel_sources = c_den1.multiselect("Fuel Sources", ['B1_Fuel', 'B2_Fuel', 'B3_Fuel'], default=['B1_Fuel', 'B2_Fuel', 'B3_Fuel'])
-                steam_sources = c_den2.multiselect("Steam Sources", ['B1_Steam', 'B2_Steam', 'B3_Steam'], default=['B1_Steam', 'B2_Steam', 'B3_Steam'])
-                
-                c_r1, c_r2 = st.columns(2)
-                fuel_ratio_mode = c_r1.selectbox("Fuel Ratio Format", ["Fuel / Production", "Production / Fuel"])
-                steam_ratio_mode = c_r2.selectbox("Steam Ratio Format", ["Steam / Production", "Production / Steam"])
-                
-                if not sel_lines or not fuel_sources or not steam_sources:
-                    st.warning("Please select at least one production line and one fuel/steam source.")
-                    st.stop()
-            
-            filtered_prod = prod_day_df[prod_day_df['Line'].isin(sel_lines)]
-            daily_prod = filtered_prod.groupby('Date')['Volume'].sum().reset_index()
-            daily_prod.rename(columns={'Volume': 'Total_Production_KG'}, inplace=True)
-            
-            df_sf = sf_day_df.copy()
-            df_sf['Total_Fuel_KG'] = df_sf[fuel_sources].sum(axis=1)
-            df_sf['Total_Steam_Tons'] = df_sf[steam_sources].sum(axis=1)
-            
-            merged_df = pd.merge(daily_prod, df_sf[['Date', 'Total_Fuel_KG', 'Total_Steam_Tons']], on='Date', how='inner')
-            
-        else: # Month-wise
-            st.info("Line selection is hidden in Month-wise mode because raw monthly production data lacks line-level breakdown.")
-            
-            with st.expander("Ratio Configuration", expanded=True):
-                c_r1, c_r2 = st.columns(2)
-                fuel_ratio_mode = c_r1.selectbox("Fuel Ratio Format", ["Fuel / Production", "Production / Fuel"])
-                steam_ratio_mode = c_r2.selectbox("Steam Ratio Format", ["Steam / Production", "Production / Steam"])
-            
-            if not prod_mo_df.empty and not sf_mo_df.empty:
-                daily_prod = prod_mo_df.copy()
-                daily_prod.rename(columns={'Volume': 'Total_Production_KG'}, inplace=True)
-                
-                df_sf = sf_mo_df.copy()
-                df_sf['Total_Fuel_KG'] = df_sf['B1_Fuel'] + df_sf['B2_Fuel'] + df_sf['B3_Fuel']
-                df_sf['Total_Steam_Tons'] = df_sf['B1_Steam'] + df_sf['B2_Steam'] + df_sf['B3_Steam']
-                
-                merged_df = pd.merge(daily_prod, df_sf[['Date', 'Total_Fuel_KG', 'Total_Steam_Tons']], on='Date', how='inner')
-                sel_lines = []
-            else:
-                st.warning("Monthly data could not be parsed correctly from the uploaded file.")
-                merged_df = pd.DataFrame()
-                
-        if not merged_df.empty:
-            
-            # Eliminate zero-drops to protect chart continuity and ratio averages
-            merged_df['Total_Production_KG'] = merged_df['Total_Production_KG'].replace(0, np.nan)
-            merged_df['Total_Fuel_KG'] = merged_df['Total_Fuel_KG'].replace(0, np.nan)
-            merged_df['Total_Steam_Tons'] = merged_df['Total_Steam_Tons'].replace(0, np.nan)
-            
-            if fuel_ratio_mode == "Fuel / Production":
-                merged_df['Fuel_Ratio'] = merged_df['Total_Fuel_KG'] / merged_df['Total_Production_KG']
-                fuel_y_title = "Ratio (Fuel KG / Prod KG)"
-            else:
-                merged_df['Fuel_Ratio'] = merged_df['Total_Production_KG'] / merged_df['Total_Fuel_KG']
-                fuel_y_title = "Ratio (Prod KG / Fuel KG)"
-                
-            if steam_ratio_mode == "Steam / Production":
-                merged_df['Steam_Ratio'] = (merged_df['Total_Steam_Tons'] * 1000) / merged_df['Total_Production_KG']
-                steam_y_title = "Ratio (Steam KG / Prod KG)"
-            else:
-                merged_df['Steam_Ratio'] = merged_df['Total_Production_KG'] / (merged_df['Total_Steam_Tons'] * 1000)
-                steam_y_title = "Ratio (Prod KG / Steam KG)"
-            
-            tab_fuel, tab_steam, tab_lines = st.tabs(["Fuel Efficiency", "Steam Efficiency", "Line-wise Variations"])
-            
-            with tab_fuel:
-                st.markdown(f"### Production vs Fuel Consumption")
-                c1, c2 = st.columns(2)
-                c1.metric(f"Average {fuel_ratio_mode} Ratio", f"{merged_df['Fuel_Ratio'].mean(skipna=True):.3f}")
-                
-                fig_pf = make_subplots(specs=[[{"secondary_y": True}]])
-                fig_pf.add_trace(go.Scatter(x=merged_df['Date'], y=merged_df['Total_Production_KG'], name='Configured Production (KG)', mode='lines+markers', fill='tozeroy', line=dict(color='#2ca02c')), secondary_y=False)
-                fig_pf.add_trace(go.Scatter(x=merged_df['Date'], y=merged_df['Total_Fuel_KG'], name='Configured Fuel (KG)', mode='lines+markers', line=dict(color='#d62728', dash='dash', width=2)), secondary_y=True)
-                fig_pf.update_layout(template="plotly_white", hovermode="x unified", height=450, xaxis_title="Date", margin=dict(t=40, b=50))
-                fig_pf = set_legend_bottom(fig_pf)
-                st.plotly_chart(fig_pf, use_container_width=True)
-                
-                st.markdown(f"#### {fuel_ratio_mode} Ratio Over Time")
-                fig_pfr = go.Figure(go.Scatter(x=merged_df['Date'], y=merged_df['Fuel_Ratio'], name=fuel_ratio_mode, mode='lines+markers', line=dict(color='#ff7f0e', width=3)))
-                fig_pfr.update_layout(template="plotly_white", hovermode="x unified", height=350, xaxis_title="Date", yaxis_title=fuel_y_title, margin=dict(t=10, b=50))
-                fig_pfr = set_legend_bottom(fig_pfr)
-                st.plotly_chart(fig_pfr, use_container_width=True)
-                
-                if time_res == "Day-wise":
-                    st.markdown("#### Multi-Line Scatterplot: Production vs Fuel")
-                    df_sf_configured = sf_day_df.copy()
-                    df_sf_configured['Total_Fuel_KG_Cfg'] = df_sf_configured[fuel_sources].sum(axis=1).replace(0, np.nan)
-                    full_merge = pd.merge(prod_day_df, df_sf_configured[['Date', 'Total_Fuel_KG_Cfg']], on='Date', how='inner')
-                    
-                    fig_scatter_fuel = go.Figure()
-                    fig_scatter_fuel.add_trace(go.Scatter(x=merged_df['Total_Production_KG'], y=merged_df['Total_Fuel_KG'], mode='markers', name='Configured Aggregate', marker=dict(color='black', symbol='diamond', size=8)))
-                    for i, line in enumerate(sel_lines):
-                        line_data = full_merge[full_merge['Line'] == line]
-                        fig_scatter_fuel.add_trace(go.Scatter(x=line_data['Volume'].replace(0, np.nan), y=line_data['Total_Fuel_KG_Cfg'], mode='markers', name=line, marker=dict(color=MULTI_COLORS[i % len(MULTI_COLORS)], size=6, opacity=0.7)))
-                    fig_scatter_fuel.update_layout(template="plotly_white", height=450, xaxis_title="Production Volume (KG)", yaxis_title="Configured Fuel (KG)", margin=dict(t=10, b=50))
-                    fig_scatter_fuel = set_legend_bottom(fig_scatter_fuel)
-                    st.plotly_chart(fig_scatter_fuel, use_container_width=True)
-                
-            with tab_steam:
-                st.markdown(f"### Production vs Steam Consumption")
-                c1, c2 = st.columns(2)
-                c1.metric(f"Average {steam_ratio_mode} Ratio", f"{merged_df['Steam_Ratio'].mean(skipna=True):.3f}")
-                
-                fig_ps = make_subplots(specs=[[{"secondary_y": True}]])
-                fig_ps.add_trace(go.Scatter(x=merged_df['Date'], y=merged_df['Total_Production_KG'], name='Configured Production (KG)', mode='lines+markers', fill='tozeroy', line=dict(color='#1f77b4')), secondary_y=False)
-                fig_ps.add_trace(go.Scatter(x=merged_df['Date'], y=merged_df['Total_Steam_Tons'] * 1000, name='Configured Steam (KG)', mode='lines+markers', line=dict(color='#9467bd', dash='dash', width=2)), secondary_y=True)
-                fig_ps.update_layout(template="plotly_white", hovermode="x unified", height=450, xaxis_title="Date", margin=dict(t=40, b=50))
-                fig_ps = set_legend_bottom(fig_ps)
-                st.plotly_chart(fig_ps, use_container_width=True)
-                
-                st.markdown(f"#### {steam_ratio_mode} Ratio Over Time")
-                fig_psr = go.Figure(go.Scatter(x=merged_df['Date'], y=merged_df['Steam_Ratio'], name=steam_ratio_mode, mode='lines+markers', line=dict(color='#17becf', width=3)))
-                fig_psr.update_layout(template="plotly_white", hovermode="x unified", height=350, xaxis_title="Date", yaxis_title=steam_y_title, margin=dict(t=10, b=50))
-                fig_psr = set_legend_bottom(fig_psr)
-                st.plotly_chart(fig_psr, use_container_width=True)
-                
-                if time_res == "Day-wise":
-                    st.markdown("#### Multi-Line Scatterplot: Production vs Steam")
-                    df_sf_configured['Total_Steam_KG_Cfg'] = (df_sf_configured[steam_sources].sum(axis=1) * 1000).replace(0, np.nan)
-                    full_merge_st = pd.merge(prod_day_df, df_sf_configured[['Date', 'Total_Steam_KG_Cfg']], on='Date', how='inner')
-                    
-                    fig_scatter_steam = go.Figure()
-                    fig_scatter_steam.add_trace(go.Scatter(x=merged_df['Total_Production_KG'], y=merged_df['Total_Steam_Tons'] * 1000, mode='markers', name='Configured Aggregate', marker=dict(color='black', symbol='diamond', size=8)))
-                    for i, line in enumerate(sel_lines):
-                        line_data = full_merge_st[full_merge_st['Line'] == line]
-                        fig_scatter_steam.add_trace(go.Scatter(x=line_data['Volume'].replace(0, np.nan), y=line_data['Total_Steam_KG_Cfg'], mode='markers', name=line, marker=dict(color=MULTI_COLORS[i % len(MULTI_COLORS)], size=6, opacity=0.7)))
-                    fig_scatter_steam.update_layout(template="plotly_white", height=450, xaxis_title="Production Volume (KG)", yaxis_title="Configured Steam (KG)", margin=dict(t=10, b=50))
-                    fig_scatter_steam = set_legend_bottom(fig_scatter_steam)
-                    st.plotly_chart(fig_scatter_steam, use_container_width=True)
-                
-            with tab_lines:
-                if time_res == "Month-wise":
-                    st.warning("Line-wise permutation mapping requires Daily shift data. Please toggle Time Resolution to 'Day-wise'.")
-                else:
-                    st.markdown("### Line-wise Production Volume")
-                    
-                    if sel_lines:
-                        fig_lines = go.Figure()
-                        for i, ln in enumerate(sel_lines):
-                            ln_df = prod_day_df[prod_day_df['Line'] == ln].groupby('Date')['Volume'].sum().reset_index()
-                            c_color = MULTI_COLORS[i % len(MULTI_COLORS)]
-                            fig_lines.add_trace(go.Scatter(x=ln_df['Date'], y=ln_df['Volume'].replace(0, np.nan), name=ln, line=dict(color=c_color, width=2)))
-                        
-                        fig_lines.update_layout(template="plotly_white", hovermode="x unified", height=450, xaxis_title="Date", yaxis_title="Production Volume (KG)", margin=dict(t=10, b=50))
-                        fig_lines = set_legend_bottom(fig_lines)
-                        st.plotly_chart(fig_lines, use_container_width=True)
-                        
-                        st.markdown("---")
-                        st.markdown("### Product Variant Permutations & Ranges")
-                        
-                        prod_clean = prod_day_df[prod_day_df['Line'].isin(sel_lines)].dropna(subset=['Desc'])
-                        prod_clean['Variant'] = prod_clean['Desc'].astype(str).apply(lambda x: [v.strip() for v in x.split(',') if v.strip() and v.strip() != 'nan'])
-                        prod_exp = prod_clean.explode('Variant')
-                        
-                        variant_counts = prod_exp['Variant'].value_counts().reset_index()
-                        variant_counts.columns = ['Variant', 'Days Active']
-                        
-                        col_freq, col_box = st.columns([1, 1.5])
-                        
-                        with col_freq:
-                            fig_freq = go.Figure(go.Bar(x=variant_counts['Variant'], y=variant_counts['Days Active'], marker_color='#1f77b4'))
-                            fig_freq.update_layout(title="Product Variant Frequency", template="plotly_white", yaxis_title="Days Active", xaxis_tickangle=-45, height=450)
-                            st.plotly_chart(fig_freq, use_container_width=True)
-                            
-                        with col_box:
-                            fig_box = go.Figure()
-                            for variant in variant_counts['Variant']:
-                                v_data = prod_exp[prod_exp['Variant'] == variant]['Volume'].replace(0, np.nan).dropna()
-                                fig_box.add_trace(go.Box(y=v_data, name=variant))
-                            fig_box.update_layout(title="Line Volume Range by Active Variant", template="plotly_white", yaxis_title="Production Volume (KG)", xaxis_tickangle=-45, height=450, showlegend=False)
-                            st.plotly_chart(fig_box, use_container_width=True)
